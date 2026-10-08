@@ -334,7 +334,7 @@ for(i in unique(df1$status)){
 }
 df1$responsess <- factor(
   df1$status,
-  levels = c("Pre", "On","Post), 
+  levels = c("Pre", "On","Post)
 )
 ggplot(df1, aes(UMAP_1, UMAP_2, color = Density)) +
   geom_point(size = 0.15, shape = ".", alpha = 0.7) +
@@ -2735,7 +2735,7 @@ pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
 heatmap_data=column_to_rownames(heatmap_data,var="id")
 # Generate the heatmap
 pheatmap(heatmap_data,
-color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),          show_rownames = TRUE,
+color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),show_rownames = TRUE,
 show_colnames = TRUE,
 cluster_rows = F,cluster_cols = F,
 scale = "column" ,cellheight = 10,cellwidth = 10,fontsize = 10, border_color = "white")
@@ -2748,7 +2748,7 @@ pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
 heatmap_data=column_to_rownames(heatmap_data,var="id")
 # Generate the heatmap
 pheatmap(heatmap_data,
-color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),          show_rownames = TRUE,
+color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),show_rownames = TRUE,
 show_colnames = TRUE,
 cluster_rows = F,cluster_cols = F,
 scale = "column" ,cellheight = 10,cellwidth = 10,fontsize = 10, border_color = "white")
@@ -2778,15 +2778,15 @@ plt.show()
 
 
 ##Figure 6 D & E & F
-DotPlot(CD14, features = "CXCR4","SPI1")+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "CXCR4 & SPI1")+coord_flip()
+DotPlot(CD14, features = c("CXCR4","SPI1"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "CXCR4 & SPI1")+coord_flip()
 
 total=diopy.input.read_h5("total.h5")
 marker_genes_dict = {
-    'target': ['CXCL12"]
+    'target': ['CXCL12']
 }
 sc.pl.dotplot(total,marker_genes_dict,groupby='leiden',dendrogram=True)
 
-Vlnplot(CD45,features="CXCL12",pt.size=0)
+VlnPlot(CD45,features="CXCL12",pt.size=0)
 
 
 ##Figure S7A
@@ -2821,7 +2821,7 @@ plot_cell_trajectory(cds,color_by = "group",size=1,show_backbone = TRUE)
 
 
 ##Figure S7B
-plot_cell_trajectory(cds,color_by = "State")##可见有多少个分支点，多少分支簇  
+plot_cell_trajectory(cds,color_by = "State")
 beam_res <- BEAM(cds[ordergene,],branch_point = 1,cores = 2)
 beam_res <- beam_res[order(beam_res$qval),]
 beam_res <- beam_res[,c("gene_short_name","pval","qval")]
@@ -2830,7 +2830,7 @@ tmp1=plot_genes_branched_heatmap(cds[row.names(subset(beam_res,qval<1e-4)),],
                                  num_clusters = 3, 
                                  cores = 2,
                                  branch_labels = c("State 3", "State 4"),
-                                 branch_colors = c("#979797", "#F05662", "#7990C8"), #pre-branch, Cell fate 1, Cell fate 2分别用什么颜色
+                                 branch_colors = c("#979797", "#F05662", "#7990C8"), 
                                  use_gene_short_name = T,
                                  show_rownames = F,
                                  return_heatmap = T
@@ -2865,7 +2865,7 @@ Mono <- readRDS("Mono.rds")
 library(Seurat)
 JARID2 <- subset(Mono,idents = c("Mono_CD14_CXCR4"))
 Idents(JARID2) <- JARID2$group
-JARID2 <- subset(JARID2,idents=c("pbmc.R.pre","pbmc.R.post","pbmc.NR.pre","pbmc.NR.post")
+JARID2 <- subset(JARID2,idents=c("pbmc.R.pre","pbmc.R.post","pbmc.NR.pre","pbmc.NR.post"))
 p <- DotPlot(JARID2,features = c("CXCR4","SPI1"))
 dotplot_data<-p$data
 heatmap_data<-dotplot_data%>%
