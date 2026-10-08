@@ -1608,7 +1608,9 @@ Idents(Mono) <- Mono$cell.type
 SLC40A1 <- subset(Mono,idents="Macro_SLC40A1")
 SLC40A1$diff <- paste0(SLC40A1$Cancer,"-",SLC40A1$group)
 Idents(SLC40A1) <- SLC40A1$diff
-diff <- FindMarkers(SLC40A1,ident.1 = c("BRC-tumor.NR.post","NSCLC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"),min.pct = 0.3,logfc.threshold = 0.4)
+diff1 <- FindMarkers(SLC40A1,ident.1 = c("BRC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"),min.pct = 0.3,logfc.threshold = 0.4)
+diff2 <- FindMarkers(SLC40A1,ident.1 = c("NSCLC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"),min.pct = 0.3,logfc.threshold = 0.4)
+diff <- rbind(diff1,diff2)
 diff$names <- rownames(diff)
 diff.R <- subset(diff,diff$avg_log2FC>0)
 diff.NR <- subset(diff,diff$avg_log2FC<0)
@@ -1711,7 +1713,7 @@ SLC40A1 <- subset(SLC40A1,idents="tumor")
 Idents(SLC40A1) <- SLC40A1$diff
 SLC40A1$diff <- factor(SLC40A1$diff,levels = c("CRC-tumor.R.post","CRC-tumor.NR.post","NSCLC-tumor.R.post","NSCLC-tumor.NR.post","BRC-tumor.R.post","BRC-tumor.NR.post"))
 Idents(SLC40A1) <- SLC40A1$diff
-DotPlot(SLC40A1, features = c("HIF1A","CCL18","CXCL2,"CXCL8","CCL3L1"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "cDC1_CLEC9A")+coord_flip()
+DotPlot(SLC40A1, features = c("HIF1A","CCL18","CXCL2,"CXCL8","CCL3L1"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +coord_flip()
 
 
 ##Figure3C
@@ -1872,7 +1874,7 @@ ggplot(meta1, aes(x = diff, y = variable, fill = value)) +
 
 Idents(SPP1) <- SPP1$diff
 SPP1$diff <- factor(SPP1$diff,levels=c("NSCLC-tumor.NR.post","NSCLC-tumor.R.post""HNSCC-tumor.NR.post","HNSCC-tumor.R.post"))
-DotPlot(SPP1, features = c("HAVCR2","LGALS9","VEGFB","CXCR4"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 12),axis.text.x = element_text(size = 12,angle = 90,vjust = 0.5,face = "italic"),strip.background =element_rect(colour = "white")) +labs(title = "LAG3 & IL10")
+DotPlot(SPP1, features = c("ADM","VEGFA","SIGLEC10","SIRPA","LGALS9"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 12),axis.text.x = element_text(size = 12,angle = 90,vjust = 0.5,face = "italic"),strip.background =element_rect(colour = "white")) 
 
 ##Figure3J
 SPP1 <- subset(Mono,idents="Macro_SPP1")
@@ -1940,3 +1942,940 @@ p_ligand_pearson
 
 
 ##FigureS3
+sc <- Read10X("sc/TD1/")
+sc <- CreateSeuratObject(sc,min.cells = 5,min.features = 500)
+sc[["percent.mt"]] <- PercentageFeatureSet(sc,pattern = "^MT-")
+sc <- subset(sc,subset=nFeature_RNA > 200 & nFeature_RNA < 9000 & percent.mt < 50)
+sc <- NormalizeData(sc,normalization.method = "LogNormalize", scale.factor = 10000)
+sc <- FindVariableFeatures(sc,selection.method = "vst",nfeatures = 2000)
+all.genes=rownames(sc)
+sc=ScaleData(sc,features = all.genes)
+sc <- RunPCA(sc,features = VariableFeatures(object = sc))   
+ElbowPlot(sc)
+sc <- FindNeighbors(sc,dims=1:10)
+sc <- FindClusters(sc,resolution = 2)   
+sc <- RunUMAP(sc,dims = 1:10)
+DimPlot(sc,reduction = "umap",label=TRUE)
+DotPlot(sc,features = c("PTPRC","CD3E","CD4","CD8A","CD8B","TRGV9","TRGC1","NKG7","GNLY","NCAM1","CD79A","MS4A1","MZB1","LYZ","CD14","FCGR3A","FCER1A","TPSAB1","TPSB2","CSF3R","CXCR1","CLEC4C","LILRA4","VWF","PECAM1","COL1A1","EPCAM"))+theme(axis.text.x = element_text(angle = 45,hjust = 1,vjust = 1,colour = "black"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title.y=element_text(size=8),axis.text.y =element_text(size = 10),axis.text.x = element_text(size = 10,angle = 90,vjust = 0.5),strip.background =element_rect(colour = "white")) 
+sc$cell_type <- Idents(sc)
+ST <- Load10X_Spatial(data.dir = "ST/TD1",filename = "TD1-filtered_feature_bc_matrix.h5")
+ST <- SCTransform(ST, assay = "Spatial", verbose = FALSE)
+ST <- ST %>% Seurat::RunPCA(verbose = FALSE) %>%Seurat::RunUMAP(dims = 1:15, verbose = FALSE) %>%Seurat::FindNeighbors(dims = 1:15, verbose = FALSE) %>%Seurat::FindClusters(verbose = FALSE,resolution = 2)
+ST <- RenameCells(ST, new.names=make.names(Cells(ST)))
+sc <- RenameCells(sc, new.names=make.names(Cells(sc)))
+traint.test <- CellTrek::traint(st_data=ST, sc_data=sc, sc_assay='RNA', cell_names='cell_type')
+celltrek.test <- CellTrek::celltrek(st_sc_int=traint.test, int_assay='traint', sc_data=sc, sc_assay = 'RNA', reduction='pca', intp=T, intp_pnt=5000, intp_lin=F, nPCs=30, ntree=1000, dist_thresh=0.55, top_spot=5, spot_n=5, repel_r=20, repel_iter=20, keep_model=T)$celltrek
+celltrek.test$cell_type <- factor(celltrek.test$cell_type, levels=sort(unique(celltrek.test$cell_type)))
+saveRDS(celltrek.test,"TD1.rds")
+CellTrek::celltrek_vis(celltrek.test@meta.data %>% dplyr::select(coord_x, coord_y, cell_type:id_new),celltrek.test@images$slice1@image, celltrek.test@images$slice1@scale.factors$lowres)
+SpatialDimPlot(celltrek, pt.size.factor = 1.5, cols = c("Endo"="#e99dc5", "Epi"="#69af91", "Fib"="#e94849", "Macro_SLC40A1"="#95A6DA")) +
+  theme(legend.text = element_text(size = 15, colour = "black"),legend.title = element_text(size = 16)) +
+  guides(fill = guide_legend(title = "cell.type", override.aes = list(size = 3)))  
+glut_cell <- c("Macro_SLC40A1","Epi","Endo","Fib")
+names(glut_cell) <- make.names(glut_cell)
+celltrek_glut <- subset(celltrek.test, subset=cell_type %in% glut_cell)
+celltrek_glut$cell_type <- factor(celltrek_glut$cell_type, levels=glut_cell)
+inp_df <- celltrek_glut@meta.data %>% dplyr::select(cell_names = dplyr::one_of('cell_type'),coord_x, coord_y)
+inp_df$coord_x = 270-inp_df$coord_x
+output <- kdist(inp_df = inp_df,
+                ref = "Macro_SLC40A1",
+                ref_type = 'all',
+                que = glut_cell,
+                k = 10,
+                new_name = "Macro_SLC40A1 vs.Others",
+                keep_nn = F)
+res = output$kdist_df
+res$barcode = row.names(res)
+inp_df$barcode = row.names(inp_df)
+res = left_join(res, inp_df)
+head(res)
+ggboxplot(data = res,
+          x = "cell_names",
+          y = "Macro_SPP1 vs.Others",
+          fill = "cell_names",
+          title = "K-distance to Macro_SPP1")+
+  stat_compare_means(method = "wilcox.test",comparisons = list(c("Epi","Endo"),c("Epi","Fib"),c("Endo","Fib"))) +
+  theme(plot.title = element_text(color="black",hjust = 0.5),
+        axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5), #,vjust = 0.5
+        legend.position = "none") + labs(y = "Distance")
+
+P1 <- SpatialFeaturePlot(a,features = "PECAM1",pt.size.factor = 1.5,min.cutoff = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P2 <- SpatialFeaturePlot(a,features = "ICAM1",pt.size.factor = 1.5,min.cutoff = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P3 <- SpatialFeaturePlot(a,features = "SLC40A1",pt.size.factor = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P4 <- SpatialFeaturePlot(a,features = "ITGB2",pt.size.factor = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+(P1+P2+P3+P4)+plot_layout(ncol = 4,nrow = 1)
+
+
+##Figure S4A
+CCL4 <- subset(Mono,idents="Macro_CCL4")
+CCL4$diff <- paste0(CCL4$Cancer,"-",CCL4$group)
+Idents(CCL4) <- CCL4$diff
+diff1 <- FindMarkers(CCL4,ident.1 = c("HNSCC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"),min.pct = 0.3,logfc.threshold = 0.4)
+diff1$names <- rownames(diff1)
+diff1.R <- subset(diff1,diff1$avg_log2FC>0)
+diff1.NR <- subset(diff1,diff1$avg_log2FC<0)
+gene.R <- bitr(diff1.R$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+gene.NR <- bitr(diff1.NR$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+GO.R<-enrichGO( gene.R$ENTREZID,OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+GO.NR<-enrichGO( gene.NR$ENTREZID, OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+BP_top10.UP.R <-GO.R@result[c(1:3,7,8,9,12,13,14,20),]
+BP_top10.DOWN.NR <-GO.NR@result[c(1:9,17),]
+BP_top10.UP.R$group <- "HNSCC"
+BP_top10.DOWN.NR$group <- "CRC"
+GO <- rbind(BP_top10.DOWN.NR,BP_top10.UP.R)
+GO$Count <- as.numeric(GO$Count)
+GO.sorted_descriptions <- GO %>%arrange(group, p.adjust) %>%distinct(Description) %>%pull(Description)
+GO$Description <- factor(GO$Description, levels = GO.sorted_descriptions)
+GO$Description <- as.character(GO$Description)
+GO$Description <- as.factor(GO$Description)
+GO$Description <- fct_inorder(GO$Description)
+ggplot(GO, aes(x = Count, y = Description, fill = group)) + 
+  geom_bar(stat = "identity", width = 0.7) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5,colour = "black",face="bold",size = 10),
+    axis.text.y = element_text(size = 14, colour = "#222222"),
+    legend.title = element_text(size = 10)
+  ) +
+  scale_fill_manual(values = c("HNSCC" = "red", "CRC" = "blue")) + 
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_legend(order = 3)) +
+  scale_y_discrete(position = "right") + 
+  theme(title = element_text(size = 13))+labs(title = "Macro_CCL4:tumor.NR.post")
+
+
+##Figure S4B & C
+CCL4 <- subset(Mono,idents="Macro_CCL4")
+cells_rankings <- AUCell_buildRankings(CCL4@assays$RNA@data,plotStats = FALSE)
+anti.infla=c("MSR1","CCL13","CCL18","IL10","FOLR2","CD163L1","SELENOP","F13A1","MERTK","AXL","IL1RN","GPNMB","CHI3L1","IL4","NECTIN2","IL11","IL13","TGFB1","TNFRSF1A","IL1R2","IL18BP")
+cells_AUC.anti <- AUCell_calcAUC(anti.infla, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.anti <- as.numeric(getAUC(cells_AUC.anti))
+CCL4$anti.inflammatory <- cells_AUC.anti
+CCL4.meta <- CCL4@meta.data
+CCL4.meta <- subset(CCL4.meta,CCL4.meta$group %in% c("tumor.R.post","tumor.NR.post"))
+CCL4.meta <- CCL4.meta[,c("group","Cancer","anti.inflammatory")]
+ggplot(CCL4.meta, aes(x = Cancer, y = anti.inflammatory, fill = group)) +
+  geom_boxplot(
+    aes(color= group),
+    fill=NA,
+    outlier.shape = NA,
+    width = 0.6,                      
+    position = position_dodge(0.8)
+  ) +
+  scale_fill_manual(values = group_col_panel) +
+  scale_color_manual(values = group_col_panel) +
+  theme_classic() +
+  theme(
+    panel.spacing = unit(0.5, "lines"),
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+ylab(label = "anti-inflammatory")+stat_compare_means(method = "wilcox.test",label = "p.signif",hide.ns = TRUE,size=15,label.y = 0.5)
+CCL4$diff <- paste0(CCL4$Cancer,"-",CCL4$group)
+Idents(CCL4) <- CCL4$diff
+CCL4$diff <- factor(CCL4$diff,levels = c("HNSCC-tumor.R.post","HNSCC-tumor.NR.post","CRC-tumor.R.post","CRC-tumor.NR.post"))
+DotPlot(CCL4, features = c("CD84","IL10"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 12),axis.text.x = element_text(size = 12,angle = 90,vjust = 0.5,face = "italic"),strip.background =element_rect(colour = "white")) +labs(title = "CD84 & IL10")
+
+
+##Figure S4D
+CCL4 <- subset(Mono,idents="Macro_CCL4")
+CD45 <- merge(CD45,y=c(CCL4))
+Idents(CD45) <- CD45$group
+CD45 <- subset(CD45,idents=c("tumor.R.post","tumor.NR.post"))
+CD45$diff <- paste0(CD45$cell.type,"-",CD45$group)
+CD45@active.ident <- as.factor(CD45$diff)
+ligand_target_matrix = readRDS("nichenet/ligand_target_matrix_nsga2r_final.rds")
+lr_network = readRDS("nichenet/lr_network_human_21122021.rds")
+weighted_networks = readRDS("nichenet/weighted_networks_nsga2r_final.rds")
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+CCL4$diff <- paste0(SPP1$Cancer,"-",SPP1$group)
+Idents(CCL4) <- CCL4$diff
+marker <- FindMarkers(CCL4,ident.1 = c("HNSCC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"))
+DE_table_receiver <- subset(marker,avg_log2FC>0) %>% rownames_to_column("gene")
+geneset_oi = DE_table_receiver %>% pull(gene)
+geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
+CD45@active.ident <- as.factor(CD45$group)
+expressed_genes_receiver = get_expressed_genes('tumor.NR.post', CD45, pct = 0.3,assay_oi = 'RNA')
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+expressed_ligands = ligands
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset_oi, background_expressed_genes = background_expressed_genes,ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(dplyr::desc(pearson)))
+ligand_activities
+best_upstream_ligands = ligand_activities %>% top_n(5, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = 100) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.1)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names()
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "#B2182B",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")+ theme(axis.text.x = element_text(face = "italic"),axis.text=element_text(color='black')) +scale_fill_gradient2(low = "whitesmoke",  high = "#B2182B")
+p_ligand_target_network
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% 
+  as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+dist_receptors = stats::dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>%make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", legend_position = "right",x_axis_position = "top",legend_title = "Prior interaction potential")
+p_ligand_receptor_network
+ligand_pearson_matrix = ligand_activities %>% dplyr::select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity",color = "darkorange",legend_position = "right",x_axis_position = "top", legend_title = "Pearson correlation coefficient") +theme(legend.text = element_text(size = 9))
+p_ligand_pearson
+
+
+##Figure S4E & F
+DotPlot(CCL4, features = c("SERPINF1"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +coord_flip()
+data.features <- FetchData(CCL4, cells = colnames(CCL4), vars = "PLXDC2, slot = "data")
+p <- DotPlot(CCL4,features = "PLXDC2")
+dotplot_data<-p$data
+heatmap_data<-dotplot_data%>%
+  select(features.plot,id,avg.exp.scaled)%>%
+  pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
+heatmap_data=column_to_rownames(heatmap_data,var="id")
+
+data.features <- FetchData(CD45, cells = colnames(CD45), vars = "PLXDC2, slot = "data")
+p <- DotPlot(CD45,features = "PLXDC2")
+dotplot_data<-p$data
+heatmap_data<-dotplot_data%>%
+  select(features.plot,id,avg.exp.scaled)%>%
+  pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
+heatmap_data=column_to_rownames(heatmap_data,var="id")
+
+
+
+##Figure S4G
+sc <- Read10X("sc/HN487/")
+sc <- CreateSeuratObject(sc,min.cells = 5,min.features = 500)
+sc[["percent.mt"]] <- PercentageFeatureSet(sc,pattern = "^MT-")
+sc <- subset(sc,subset=nFeature_RNA > 200 & nFeature_RNA < 9000 & percent.mt < 50)
+sc <- NormalizeData(sc,normalization.method = "LogNormalize", scale.factor = 10000)
+sc <- FindVariableFeatures(sc,selection.method = "vst",nfeatures = 2000)
+all.genes=rownames(sc)
+sc=ScaleData(sc,features = all.genes)
+sc <- RunPCA(sc,features = VariableFeatures(object = sc))   
+ElbowPlot(sc)
+sc <- FindNeighbors(sc,dims=1:10)
+sc <- FindClusters(sc,resolution = 2)   
+sc <- RunUMAP(sc,dims = 1:10)
+DimPlot(sc,reduction = "umap",label=TRUE)
+DotPlot(sc,features = c("PTPRC","CD3E","CD4","CD8A","CD8B","TRGV9","TRGC1","NKG7","GNLY","NCAM1","CD79A","MS4A1","MZB1","LYZ","CD14","FCGR3A","FCER1A","TPSAB1","TPSB2","CSF3R","CXCR1","CLEC4C","LILRA4","VWF","PECAM1","COL1A1","EPCAM"))+theme(axis.text.x = element_text(angle = 45,hjust = 1,vjust = 1,colour = "black"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title.y=element_text(size=8),axis.text.y =element_text(size = 10),axis.text.x = element_text(size = 10,angle = 90,vjust = 0.5),strip.background =element_rect(colour = "white")) 
+sc$cell_type <- Idents(sc)
+ST <- Load10X_Spatial(data.dir = "ST/HN487",filename = "TD1-filtered_feature_bc_matrix.h5")
+ST <- SCTransform(ST, assay = "Spatial", verbose = FALSE)
+ST <- ST %>% Seurat::RunPCA(verbose = FALSE) %>%Seurat::RunUMAP(dims = 1:15, verbose = FALSE) %>%Seurat::FindNeighbors(dims = 1:15, verbose = FALSE) %>%Seurat::FindClusters(verbose = FALSE,resolution = 2)
+ST <- RenameCells(ST, new.names=make.names(Cells(ST)))
+sc <- RenameCells(sc, new.names=make.names(Cells(sc)))
+traint.test <- CellTrek::traint(st_data=ST, sc_data=sc, sc_assay='RNA', cell_names='cell_type')
+celltrek.test <- CellTrek::celltrek(st_sc_int=traint.test, int_assay='traint', sc_data=sc, sc_assay = 'RNA', reduction='pca', intp=T, intp_pnt=5000, intp_lin=F, nPCs=30, ntree=1000, dist_thresh=0.55, top_spot=5, spot_n=5, repel_r=20, repel_iter=20, keep_model=T)$celltrek
+celltrek.test$cell_type <- factor(celltrek.test$cell_type, levels=sort(unique(celltrek.test$cell_type)))
+saveRDS(celltrek.test,"TD1.rds")
+CellTrek::celltrek_vis(celltrek.test@meta.data %>% dplyr::select(coord_x, coord_y, cell_type:id_new),celltrek.test@images$slice1@image, celltrek.test@images$slice1@scale.factors$lowres)
+SpatialDimPlot(celltrek, pt.size.factor = 1.5, cols = c("Endo"="#e99dc5", "Epi"="#69af91", "Fib"="#e94849", "Macro_SLC40A1"="#95A6DA")) +
+  theme(legend.text = element_text(size = 15, colour = "black"),legend.title = element_text(size = 16)) +
+  guides(fill = guide_legend(title = "cell.type", override.aes = list(size = 3)))  
+glut_cell <- c("Macro_SLC40A1","Epi","Endo","Fib")
+names(glut_cell) <- make.names(glut_cell)
+celltrek_glut <- subset(celltrek.test, subset=cell_type %in% glut_cell)
+celltrek_glut$cell_type <- factor(celltrek_glut$cell_type, levels=glut_cell)
+inp_df <- celltrek_glut@meta.data %>% dplyr::select(cell_names = dplyr::one_of('cell_type'),coord_x, coord_y)
+inp_df$coord_x = 270-inp_df$coord_x
+output <- kdist(inp_df = inp_df,
+                ref = "Macro_CCL4",
+                ref_type = 'all',
+                que = glut_cell,
+                k = 10,
+                new_name = "Macro_CCL4 vs.Others",
+                keep_nn = F)
+res = output$kdist_df
+res$barcode = row.names(res)
+inp_df$barcode = row.names(inp_df)
+res = left_join(res, inp_df)
+head(res)
+ggboxplot(data = res,
+          x = "cell_names",
+          y = "Macro_CCL4 vs.Others",
+          fill = "cell_names",
+          title = "K-distance to Macro_CCL4")+
+  stat_compare_means(method = "wilcox.test",comparisons = list(c("Epi","Endo"),c("Epi","Fib"),c("Endo","Fib"))) +
+  theme(plot.title = element_text(color="black",hjust = 0.5),
+        axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5), #,vjust = 0.5
+        legend.position = "none") + labs(y = "Distance")
+
+P1 <- SpatialFeaturePlot(a,features = "COL1A1",pt.size.factor = 1.5,min.cutoff = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P2 <- SpatialFeaturePlot(a,features = "SERPINF1",pt.size.factor = 1.5,min.cutoff = 1.6)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P3 <- SpatialFeaturePlot(a,features = "CCL4",pt.size.factor = 1.5,min.cutoff = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+P4 <- SpatialFeaturePlot(a,features = "PLXDC2",pt.size.factor = 1.5,min.cutoff = 1.5)+theme(legend.title = element_text(size = 13),legend.text = element_text(size = 12))+scale_fill_gradientn(colours = c("grey","green","yellow","red"))
+(P1+P2+P3+P4)+plot_layout(ncol = 4,nrow = 1)
+
+
+##Figure 4B
+Monocyte <- readRDS("Mono.rds")
+Idents(Monocyte) <- Monocyte$cell.type
+Mono <- subset(Monocyte,idents=c("Macro_SPP1","Macro_STMN1","Macro_CCL20","Macro_SLC40A1","Macro_FCGBP","Macro_CXCL9","Macro_TREM2","Macro_MRC1","Macro_CCL4"))
+cells_rankings <- AUCell_buildRankings(Mono@assays$RNA@data,plotStats = FALSE)
+M1.list <- c("ACHE","ADAMDEC1","APOBEC3A","APOL3","APOL6","AQP9","ARRB1","CCL19",'CCL5',"CCL8","CCR7","CD38","CD40","CD52","LILRB2","CHI3L1","CLIC2","CXCL10","CXCL11","CXCL13","CXCL9","CYP27B1","DHX58","EBI3","GGT5","HESX1","IDO1","IFI44L","IL2RA","KIAA0754","KYNU","LAG3","LAMP3","LILRA3","LILRB2","NOD2","PLA1A","PTGIR","RASSF4","RSAD2","SIGLEC1","SLAMF1","SLC15A3","SLC2A6","SOCS1","TLR7","TLR8","TNFAIP6","TNIP3","TRPM4")
+M2.list <- c('ADAMDEC1', 'AIF1', 'ALOX15', 'CCL13', 'CCL14', 'CCL18', 'CCL23', 'CD209', 'CD4', 'CD68', 'CFP', 'CLEC10A', 'CLEC4A', 'CRYBB1', 'TEX14','EBI3', 'FAM198B', 'FES', 'FRMD4A', 'FZD2', 'GSTT1', 'HRH1', 'HTR2B','ELL2', 'MS4A6A', 'NME8', 'NPL', 'P2RY13', 'PDCD1LG2', 'RENBP', 'SIGLEC1', 'SLC15A3', 'TLR8', 'TREM2', 'WNT5B')
+cells_AUC.M1 <- AUCell_calcAUC(M1.list, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.M1 <- as.numeric(getAUC(cells_AUC.M1))
+cells_AUC.M2 <- AUCell_calcAUC(M2.list, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.M2 <- as.numeric(getAUC(cells_AUC.M2))
+Mono$M1 <- cells_AUC.M1
+Mono$M2 <- cells_AUC.M2
+Mono.meta <- Mono@meta.data
+Mono.meta <- Mono.meta[,c("cell.type","M1","M2")]
+Mono.meta <- melt(Mono.meta,id.vars = "cell.type", measure.vars = c("M1", "M2"))
+ggplot()+
+  geom_half_violin(data = Mono.meta %>% filter(variable == "M1"),aes(x = cell.type,y = value,fill=variable),colour="white",side = "l")+
+  geom_half_violin(data = Mono.meta %>% filter(variable == "M2"),aes(x = cell.type,y = value,fill=variable),colour="white",side = "r")+
+  scale_fill_manual(values = c('M1'='#6699CC','M2'='#CC3333'))+
+  theme_bw()+
+  xlab("")+
+  ylab("M1/M2 score")+
+  ylim(NA,0.4)+
+  geom_point(data = Mono.meta, aes(x = cell.type,y = value, fill = variable),stat = 'summary', fun=mean,position = position_dodge(width = 0.2))+
+  stat_summary(data = Mono.meta, aes(x = cell.type,y = value, fill = variable),fun.min = function(x){quantile(x)[2]},fun.max = function(x){quantile(x)[4]},geom = 'errorbar', color='black',width=0.01,size=0.5,position = position_dodge(width = 0.2))+
+  stat_compare_means(data = Mono.meta, aes(x = cell.type,y = value, fill = variable),symnum.args=list(cutpoints = c(0, 0.001, 0.01, 0.05, 1),symbols = c("***", "**", "*", "-")),label = "p.signif",label.y = 0.38,hide.ns = F,size=8)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,colour = "black",size = 10),axis.text.y = element_text(size = 10,colour = "black"),axis.title.y = element_text(size = 12,colour = "black"),legend.position = "top",legend.justification = "right")
+
+
+##Figure 4C
+FCGBP <- subset(Mono,idents="Macro_FCGBP")
+CD45 <- merge(CD45,y=c(FCGBP))
+Idents(CD45) <- CD45$group
+CD45 <- subset(CD45,idents=c("tumor.R.post","tumor.NR.post"))
+CD45$diff <- paste0(CD45$cell.type,"-",CD45$group)
+CD45@active.ident <- as.factor(CD45$diff)
+ligand_target_matrix = readRDS("nichenet/ligand_target_matrix_nsga2r_final.rds")
+lr_network = readRDS("nichenet/lr_network_human_21122021.rds")
+weighted_networks = readRDS("nichenet/weighted_networks_nsga2r_final.rds")
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+Idents(FCGBP) <- FCGBP$group
+marker <- FindMarkers(FCGBP,ident.1 = c("tumor.NR.post"),ident.2 = c("tumor.NR.post"))
+DE_table_receiver <- subset(marker,avg_log2FC>0) %>% rownames_to_column("gene")
+geneset_oi = DE_table_receiver %>% pull(gene)
+geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
+CD45@active.ident <- as.factor(CD45$group)
+expressed_genes_receiver = get_expressed_genes('tumor.NR.post', CD45, pct = 0.4,assay_oi = 'RNA')
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+expressed_ligands = ligands
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset_oi, background_expressed_genes = background_expressed_genes,ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(dplyr::desc(pearson)))
+ligand_activities
+best_upstream_ligands = ligand_activities %>% top_n(6, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = 250) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.1)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names()
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "#B2182B",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")+ theme(axis.text.x = element_text(face = "italic"),axis.text=element_text(color='black')) +scale_fill_gradient2(low = "whitesmoke",  high = "#B2182B")
+p_ligand_target_network
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% 
+  as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+dist_receptors = stats::dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>%make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", legend_position = "right",x_axis_position = "top",legend_title = "Prior interaction potential")
+p_ligand_receptor_network
+ligand_pearson_matrix = ligand_activities %>% dplyr::select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity",color = "darkorange",legend_position = "right",x_axis_position = "top", legend_title = "Pearson correlation coefficient") +theme(legend.text = element_text(size = 9))
+p_ligand_pearson
+
+
+##Figure 4D
+total.subset <- readRDS("total.subset.rds")
+write.table(as.matrix(total.subset@assays$RNA@data), 'cellphonedb_count.txt', sep='\t', quote=F) 
+meta_data <- cbind(rownames(total.subset@meta.data), total.subset@meta.data[,'cell.type', drop=F]) 
+meta_data <- as.matrix(meta_data) meta_data[is.na(meta_data)] = "Unkown"
+write.table(meta_data, 'cellphonedb_meta.txt', sep='\t', quote=F, row.names=F)
+cellphonedb method statistical_analysis cellphonedb_meta.txt cellphonedb_count.txt --counts-data=gene_name
+means = pd.read_csv('/data5/Liqy/NSCLC/cellphonedb/out/means.txt',sep="\t")
+pvals = pd.read_csv('/data5/Liqy/NSCLC/cellphonedb/out/pvalues.txt',sep="\t")
+decon = pd.read_csv('/data5/Liqy/NSCLC/cellphonedb/out/deconvoluted.txt',sep="\t")
+kpy.plot_cpdb_heatmap(pvals = pvals,figsize = (10,10),title = "Number of significant interactions",symmetrical = False,)
+plt.savefig("plot_cpdb_heatmap.pdf")
+
+
+##Figure 4E
+Mono <- readRDS("Mono.rds")
+Mono <- subseta(c("Macro_FCGBP","Macro_TREM2","Macro_STMN1","Macro_SPP1","Macro_SLC40A1","Macro_MRC1","Macro_CXCL9","Macro_CCL4","Macro_CCL20"))
+CD45 <- readRDS("CD45.rds")
+Epi <- subset(CD45,idents="Epi)
+a <- merge(Mono,y=Epi)
+Idents(a) <- a$group
+a <- subset(a,idents=c("tumor.NR.post","tumor.R.post"))
+a$diff <- paste0(a$cell.type,"-",a$group)
+write.table(as.matrix(total.subset@assays$RNA@data), 'cellphonedb_count.txt', sep='\t', quote=F) 
+meta_data <- cbind(rownames(total.subset@meta.data), total.subset@meta.data[,'diff', drop=F]) 
+meta_data <- as.matrix(meta_data) meta_data[is.na(meta_data)] = "Unkown"
+write.table(meta_data, 'cellphonedb_meta.txt', sep='\t', quote=F, row.names=F)
+cellphonedb method statistical_analysis cellphonedb_meta.txt cellphonedb_count.txt --counts-data=gene_name
+
+all_pval = read.table("pvalues.txt", header=T, stringsAsFactors = F, sep='\t', comment.char = '', check.names=F)
+all_means = read.table('means.txt', header=T, stringsAsFactors = F, sep='\t', comment.char = '', check.names=F)
+intr_pairs = all_pval$interacting_pair
+all_pval = all_pval[,-c(1,3:11)]
+all_means = all_means[,-c(1,3:11)]
+selected_celltype = c("Macro_CCL20-tumor.NR.post|Epi","Macro_CCL20-tumor.R.post|Epi","Macro_CCL4-tumor.NR.post|Epi","Macro_CCL4-tumor.R.post|Epi","Macro_CXCL9-tumor.NR.post|Epi","Macro_CXCL9-tumor.R.post|Epi","Macro_FCGBP-tumor.NR.post|Epi","Macro_FCGBP-tumor.R.post|Epi","Macro_MRC1-tumor.NR.post|Epi","Macro_MRC1-tumor.R.post|Epi","Macro_SLC40A1-tumor.NR.post|Epi","Macro_SLC40A1-tumor.R.post|Epi","Macro_SPP1-tumor.NR.post|Epi","Macro_SPP1-tumor.R.post|Epi","Macro_STMN1-tumor.NR.post|Epi","Macro_STMN1-tumor.R.post|Epi","Macro_TREM2-tumor.NR.post|Epi","Macro_TREM2-tumor.R.post|Epi")
+sig_pairs <- all_pval
+sig_pairs <- sig_pairs[which(rowSums(sig_pairs<=0.05)!=0), ]
+View(sig_pairs)
+sub_sig_pairs <- sig_pairs
+dim(sub_sig_pairs)
+selected_pairs = sub_sig_pairs$interacting_pair
+sel_pval = all_pval[match(selected_pairs, intr_pairs), selected_celltype]
+sel_means = all_means[match(selected_pairs, intr_pairs), selected_celltype]
+View(sel_pval)
+df_names = expand.grid(selected_pairs, selected_celltype)
+pval = unlist(sel_pval)
+pval[pval==0] = 0.00001
+plot.data = cbind(df_names,pval)
+pr = unlist(as.data.frame(sel_means))
+plot.data = cbind(plot.data,pr)
+colnames(plot.data) = c('pair', 'clusters', 'pvalue', 'mean')
+plot.data$clusters <- gsub('[|]', '_', plot.data$clusters)
+my_palette <- colorRampPalette(c("darkblue","yellow","red"))(n=1000)
+selected_pairs <- c("NECTIN2_NECTIN3","THBS1_a2Bb3 complex","ICAM1_ITGAL","NRP2_PGF","CCL3L3_CCR1","TNFSF13_TNFRSF14","AXL_IL15RA","AXL_GAS6")
+plot.data1 <- plot.data[plot.data$pair %in% selected_pairs, ]
+ggplot(plot.data1, aes(x=clusters, y=pair)) +
+  geom_point(aes(size=-log10(pvalue + 0.001), color=mean)) +
+  scale_size_continuous(range=c(1,3), breaks=c(0, 1.0, 2.0)) +  
+  scale_color_gradientn('Mean expression', colors=my_palette, limits=c(0.3, 1), na.value="transparent") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.text=element_text(size=10, colour="black"),
+        axis.text.x = element_text(angle=90, hjust=1, vjust=0, size=10),
+        axis.text.y = element_text(size=10, colour="black"),
+        axis.title=element_blank(),
+        panel.border = element_rect(size=0.7, linetype="solid", colour="black"))
+
+
+##Figure S5A
+Idents(Mono) <- Mono$site
+Mono <- subset(Mono,idents = "tumor")
+Idents(Mono) <- Mono$cell.type
+Mono <- subset(Mono,idents = c("Macro_CCL20","Macro_CCL4","Macro_CXCL9","Macro_FCGBP","Macro_MRC1","Macro_SLC40A1","Macro_SPP1","Macro_STMN1","Macro_TREM2"))
+Idents(Mono) <- Mono$group
+Mono <- subset(Mono,idents = c("tumor.NR.post"))
+Idents(Mono) <- Mono$cell.type
+cells_rankings <- AUCell_buildRankings(Mono@assays$RNA@data,plotStats = FALSE)
+Anti.inflammatory <- read.table("anti-inflammatory")
+anti <- as.character(Anti.inflammatory$V1)
+cells_AUC.anti <- AUCell_calcAUC(anti, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.anti <- as.numeric(getAUC(cells_AUC.anti))
+Mono$anti <- cells_AUC.anti
+Mono.meta <- Mono@meta.data
+Mono.meta$cell.type <- factor(Mono.meta$cell.type,levels = c("Macro_FCGBP","Macro_MRC1","Macro_CCL20","Macro_CCL4","Macro_SPP1","Macro_STMN1","Macro_TREM2","Macro_SLC40A1","Macro_CXCL9"))
+mycompare <- list(c("Macro_FCGBP","Macro_MRC1"),c("Macro_FCGBP","Macro_CCL20"),c("Macro_FCGBP","Macro_CCL4"),c("Macro_FCGBP","Macro_SPP1"),c("Macro_FCGBP","Macro_STMN1"),c("Macro_FCGBP","Macro_TREM2"),c("Macro_FCGBP","Macro_SLC40A1"),c("Macro_FCGBP","Macro_CXCL9"))
+ggplot(Mono.meta, aes(x = cell.type, y = anti, fill = cell.type)) +
+  geom_boxplot(
+    aes(color = "black"),
+    outlier.shape = NA,
+    width = 0.6,
+    position = position_dodge(0.8),
+    linewidth = 0.8     
+  ) +
+
+  scale_fill_manual(values = Mono_panel) + 
+  scale_color_manual(values = "black") + 
+  theme_classic() +
+  theme(
+    panel.spacing = unit(0.5, "lines"),
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1, colour = "black", size = 12),
+    axis.text.y = element_text(size = 12, colour = "black"),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(
+      size = 20,
+      hjust = 0.5,
+      face = "bold",
+      margin = margin(b = 10)
+    ),
+    axis.title.x = element_blank()
+  ) +
+  ylab(label = "anti-inflammatory") +
+  stat_compare_means(
+    comparisons = mycompare,
+    method = "wilcox.test",
+    label = "p.signif",
+    hide.ns = TRUE,
+    size = 10
+  ) +
+  labs(title = "anti-inflammatory score") +
+  guides(color = "none")  
+
+
+##Figure S5B
+write.csv(t(as.matrix(Mono@assays$RNA@counts)),file = "scenic/JARID2.csv")
+import os,sys
+os.getcwd()
+import loompy as lp
+import numpy as np
+import scanpy as sc
+x=sc.read_csv("Mono.csv")
+row_attrs={"Gene":np.array(x.var_names),}
+col_attrs={"CellID":np.array(x.obs_names)}
+lp.create("sce.loom",x.X.transpose(),row_attrs,col_attrs)
+dir=./
+tfs=$dir/allTFs_hg38.txt
+feather=$dir/hg38__refseq-r80__10kb_up_and_down_tss.mc9nr.genes_vs_motifs.rankings.feather
+tbl=$dir/motifs-v9-nr.hgnc-m0.001-o0.0.tbl 
+input_loom=./sce.loom
+
+pyscenic grn \
+--num_workers 80 \
+--method grnboost2 \
+--sparse \
+--output sce.adj.csv \
+sce.loom \
+allTFs_hg38.txt
+
+pyscenic ctx \
+--num_workers 40  \
+--output sce.regulons.csv \
+--expression_mtx_fname sce.loom  \
+--all_modules \
+--mask_dropouts \
+--mode "dask_multiprocessing" \
+--min_genes 10 \
+--annotations_fname motifs-v9-nr.hgnc-m0.001-o0.0.tbl  \
+sce.adj.csv \
+hg38_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather
+
+pyscenic aucell \
+sce.loom \
+sce.regulons.csv \
+--output out_SCENIC.loom \
+--num_workers 10
+
+loom <- open_loom('out_SCENIC.loom') 
+regulons_incidMat <- get_regulons(loom, column.attr.name="Regulons")
+regulons <- regulonsToGeneLists(regulons_incidMat)
+regulonAUC <- get_regulons_AUC(loom,column.attr.name='RegulonsAUC')
+regulonAucThresholds <- get_regulon_thresholds(loom)
+tail(regulonAucThresholds[order(as.numeric(names(regulonAucThresholds)))])
+embeddings <- get_embeddings(loom)  
+close_loom(loom)
+sub_regulonAUC <- regulonAUC[,match(colnames(Mono),colnames(regulonAUC))]
+dim(sub_regulonAUC)
+identical(colnames(sub_regulonAUC), colnames(Mono))  
+cellClusters <- data.frame(row.names = colnames(Mono),seurat_clusters = as.character(Mono$cell.type))
+cellTypes <- data.frame(row.names = colnames(Mono),celltype = Mono$celltype)
+selectedResolution <- "celltype"
+cellsPerGroup <- split(rownames(cellTypes),cellTypes[,selectedResolution])
+sub_regulonAUC <- sub_regulonAUC[onlyNonDuplicatedExtended(rownames(sub_regulonAUC)),] 
+dim(sub_regulonAUC)
+regulonActivity_byGroup <- sapply(cellsPerGroup,function(cells) rowMeans(getAUC(sub_regulonAUC)[,cells]))
+regulonActivity_byGroup_Scaled <- t(scale(t(regulonActivity_byGroup),center = T, scale=T)) 
+dim(regulonActivity_byGroup_Scaled)
+regulonActivity_byGroup_Scaled=na.omit(regulonActivity_byGroup_Scaled)
+celltype <- c("Macro_FCGBP")
+rssRanklist <- list()
+for(i in 1:length(celltype)) {
+  
+  data_rank_plot <- cbind(as.data.frame(rownames(regulonActivity_byGroup_Scaled)),as.data.frame(regulonActivity_byGroup_Scaled[,celltype[i]]))
+  colnames(data_rank_plot) <- c("TF", "cell.type")
+  data_rank_plot=na.omit(data_rank_plot)
+  data_rank_plot <- data_rank_plot[order(data_rank_plot$celltype,decreasing=T),]
+  data_rank_plot$rank <- seq(1, nrow(data_rank_plot))
+  
+  p <- ggplot(data_rank_plot, aes(x=rank, y=celltype)) + 
+    geom_point(size=3, shape=16, color="#1F77B4",alpha =0.4)+
+    geom_point(data = data_rank_plot[1:5,],
+               size=3, color='#DC050C')+ 
+    theme_bw()+
+    theme(axis.title = element_text(colour = 'black', size = 20),
+          axis.text = element_text(colour = 'black', size = 10),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),title = element_text(size = 20))+
+    labs(x='Regulons Rank', y='Specificity Score',title =celltype[i])+
+    geom_text_repel(data= data_rank_plot[1:5,],
+                    aes(label=TF), color="black", size=10, fontface="italic", 
+                    arrow = arrow(ends="first", length = unit(0.01, "npc")), box.padding = 1,
+                    point.padding = 1, segment.color = 'black', 
+                    segment.size = 1, force = 1, max.iter = 3e3,max.overlaps = Inf)
+  rssRanklist[[i]] <- p
+}
+
+plot_grid(rssRanklist[[1]])
+
+
+##Figure S5D
+DotPlot(CD45, features = best_upstream_ligands)+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "Non immune cells: target ligand")+coord_flip()
+CD45 <- readRDS("CD45.rds")
+Idents(CD45) <- CD45$group
+a <- subset(CD45,idents = c("tumor.R.post","tumor.NR.post"))
+Idents(CD45) <- CD45$cell.type
+Idents(a) <- a$cell.type
+a <- subset(a,idents = "Endo")
+data.features <- FetchData(a, cells = colnames(a), vars = c("ADAM17"), slot = "data")
+meta <- a@meta.data
+meta <- cbind(meta,data.features)
+meta <- meta[,c("Cancer","group","ADAM17")]
+meta$ADAM17 <- scale(meta$ADAM17)
+meta_summary <- meta %>% 
+  group_by(Cancer, group) %>% 
+  summarise(
+    mean_expr = ifelse(is.na(mean(ADAM17, na.rm = TRUE)), 0, mean(ADAM17, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>% 
+  pivot_wider(
+    names_from = group, 
+    values_from = mean_expr
+  ) %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+p_values <- meta %>% 
+  group_by(Cancer) %>% 
+  group_split() %>%
+  map_dfr(function(df) {
+    grp1 <- df %>% filter(group == "tumor.R.post") %>% pull(TGFB1) %>% na.omit()
+    grp2 <- df %>% filter(group == "tumor.NR.post") %>% pull(TGFB1) %>% na.omit()
+    if (length(grp1) == 0 || length(grp2) == 0) {
+      test_res <- list(p.value = 1)
+    } else {
+      test_res <- wilcox.test(grp1, grp2)
+    }
+    data.frame(
+      Cancer = unique(df$Cancer),
+      p_value = test_res$p.value
+    )
+  })
+heatmap_mat <- meta_summary %>% 
+  column_to_rownames(var = "Cancer") %>%  
+  as.matrix()
+p_values <- p_values %>% 
+  mutate(
+    sig_star = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.1  ~ "*",
+      TRUE           ~ ""
+    )
+  )
+rownames(heatmap_mat) <- paste0(
+  rownames(heatmap_mat), 
+  " ", 
+  p_values$sig_star[match(rownames(heatmap_mat), p_values$Cancer)]
+)
+my_palette <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+pheatmap(
+  heatmap_mat,               
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = FALSE,     
+  cluster_cols = FALSE,
+  border_color = NA,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  cellwidth = 100,
+  cellheight = 20,
+  fontsize = 12,
+  main = "ADAM17 Expression in different Cancer types"
+)
+
+
+##Figure S5F & G
+Mono <- readRDS("Mono.rds")
+Idents(Mono) <- Mono$group
+a <- subset(Mono,idents = c("tumor.R.post","tumor.NR.post"))
+Idents(a) <- a$cell.type
+a <- subset(a,idents = "Macro_FCGBP")
+data.features <- FetchData(a, cells = colnames(a), vars = c("PDGFB","ITGB1"), slot = "data")
+meta <- a@meta.data
+View(meta)
+meta <- cbind(meta,data.features)
+meta <- meta[,c("Cancer","group","PDGFB","ITGB1")]
+p_values <- meta %>%
+  group_by(Cancer) %>%
+  filter(n_distinct(group) == 2) %>%
+  do({
+    group1 <- pull(filter(., group == unique(group)[1]), PDGFB)
+    group2 <- pull(filter(., group == unique(group)[2]), PDGFB)
+    test_result <- wilcox.test(group1, group2)
+    tibble(
+      p_value = round(test_result$p.value, 3),
+      p_label = case_when(
+        p_value < 0.001 ~ "****",
+        p_value < 0.01 ~ "***",
+        p_value < 0.05 ~ "**",
+        p_value < 0.1 ~ "*",
+        TRUE ~ paste0("p = ", p_value)
+      )
+    )
+  }) %>%
+  ungroup()
+
+p1 <- ggplot(meta, aes(x = Cancer, y = PDGFB, fill = group)) +
+  geom_violin(width = 0.7, scale = "width") +
+  geom_text(
+    data = p_values,
+    aes(x = Cancer, y = max(meta$PDGFB) * 1.1, label = p_label),
+    position = position_dodge(0.8), 
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  labs(
+    x = "",
+    y = "PDGFB",
+    fill = "group"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1,colour = "black"),
+    plot.margin = margin(5, 5, 20, 5)  
+  )+scale_fill_manual(values = c("tumor.NR.post"="#CC3333","tumor.R.post"='#6699CC'))+labs(title = "PDGFB expression in Macro_FCGBP across different Cancer types")
+
+p2 <- ggplot(meta, aes(x = Cancer, y = ITGB1, fill = group)) +
+  geom_violin(width = 0.7, scale = "width") +
+  geom_text(
+    data = p_values,
+    aes(x = Cancer, y = max(meta$ITGB1) * 1.1, label = p_label),
+    position = position_dodge(0.8), 
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  labs(
+    x = "",
+    y = "ITGB1",
+    fill = "group"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1,colour = "black"),
+    plot.margin = margin(5, 5, 20, 5)  
+  )+scale_fill_manual(values = c("tumor.NR.post"="#CC3333","tumor.R.post"='#6699CC'))+labs(title = "ITGB1 expression in Macro_FCGBP across different Cancer types")
+
+
+
+Mono <- readRDS("Mono.rds")
+Idents(Mono) <- Mono$group
+a <- subset(Mono,idents = c("tumor.R.post","tumor.NR.post","tumor.NR.pre","tumor.R.pre"))
+Idents(a) <- a$cell.type
+a <- subset(a,idents = "Macro_FCGBP")
+data.features <- FetchData(a, cells = colnames(a), vars = c("PDGFB","ITGB1"), slot = "data")
+meta <- a@meta.data
+View(meta)
+meta <- cbind(meta,data.features)
+meta <- meta[,c("group","PDGFB","ITGB1")]
+
+p3 <- ggplot(meta, aes(x = group, y = PDGFB)) +
+  geom_violin(width = 0.7, scale = "width") +
+  labs(
+    x = "",
+    y = "PDGFB",
+    fill = "group"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1,colour = "black"),
+    plot.margin = margin(5, 5, 20, 5)  
+  )+stat_compare_means(comparisons = list(c("tumor.NR.post","tumor.R.post"),c("tumor.NR.post","tumor.NR.pre"),c("tumor.R.post","tumor.R.pre"),c("tumor.R.post","tumor.R.pre")),method = "wilcox.test",label = "p.signif",size=10)+labs(title = "PDGFB expression in Macro_FCGBP across different Cancer types")
+
+
+p4 <- ggplot(meta, aes(x = group, y = ITGB1)) +
+  geom_violin(width = 0.7, scale = "width") +
+  labs(
+    x = "",
+    y = "ITGB1",
+    fill = "group"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1,colour = "black"),
+    plot.margin = margin(5, 5, 20, 5)  
+  )+stat_compare_means(comparisons = list(c("tumor.NR.post","tumor.R.post"),c("tumor.NR.post","tumor.NR.pre"),c("tumor.R.post","tumor.R.pre"),c("tumor.R.post","tumor.R.pre")),method = "wilcox.test",label = "p.signif",size=10)+labs(title = "ITGB1 expression in Macro_FCGBP across different Cancer types")
+
+
+
+##Figure 6A
+a <- subset(Mono,idents=c("Macro_FCGBP","Mono_CD14_CXCR4","Mono_CD14_PADI4","Mono_CD14_LGALS2","Mono_CD14_TNF","Mono_CD14_DLEU2","Mono_CD14_PPBP","Mono_CD14_CSMD1"))
+p <- DotPlot(a,features = c("MAFB","CEBPB","JUND","ZFP36L1","NINJ1","CDKN1A","PIK3R5","GAB2","JARID2","RAPGEF1","CXCR4","ID2","MIF","DUSP1","ZFP36","UPP1","LSP1","FOS","HBEGF","RUNX3","SDC2"))
+dotplot_data<-p$data
+heatmap_data<-dotplot_data%>%
+select(features.plot,id,avg.exp.scaled)%>%
+pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
+heatmap_data=column_to_rownames(heatmap_data,var="id")
+# Generate the heatmap
+pheatmap(heatmap_data,
+color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),          show_rownames = TRUE,
+show_colnames = TRUE,
+cluster_rows = F,cluster_cols = F,
+scale = "column" ,cellheight = 10,cellwidth = 10,fontsize = 10, border_color = "white")
+library(pheatmap)
+p <- DotPlot(a,features = c("MAFB","CEBPB","JUND","ZFP36L1","NINJ1","CDKN1A","PIK3R5","GAB2","JARID2","RAPGEF1","CXCR4","ID2","MIF","DUSP1","ZFP36","UPP1","LSP1","FOS","HBEGF","RUNX3","SDC2"))
+dotplot_data<-p$data
+heatmap_data<-dotplot_data%>%
+select(features.plot,id,avg.exp.scaled)%>%
+pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
+heatmap_data=column_to_rownames(heatmap_data,var="id")
+# Generate the heatmap
+pheatmap(heatmap_data,
+color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),          show_rownames = TRUE,
+show_colnames = TRUE,
+cluster_rows = F,cluster_cols = F,
+scale = "column" ,cellheight = 10,cellwidth = 10,fontsize = 10, border_color = "white")
+
+
+##Figure 6B
+a=sc.read_h5ad("Mono.h5ad")
+sc.pp.neighbors(a,use_rep='X_pca',n_pcs=25)
+sc.tl.paga(a, groups='cell.type')
+with rc_context({'figure.figsize': (8,8)}):
+    sc.pl.paga(
+        a,
+        color='cell.type',
+        threshold=0.2,show=False
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("PAGA", fontsize=20)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("PAGA.pdf", dpi=400, bbox_inches='tight')
+plt.show()
+
+
+
+
+
+##Figure 6 D & E & F
+DotPlot(CD14, features = "CXCR4","SPI1")+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "CXCR4 & SPI1")+coord_flip()
+
+total=diopy.input.read_h5("total.h5")
+marker_genes_dict = {
+    'target': ['CXCL12"]
+}
+sc.pl.dotplot(total,marker_genes_dict,groupby='leiden',dendrogram=True)
+
+Vlnplot(CD45,features="CXCL12",pt.size=0)
+
+
+##Figure S7A
+Mono <- readRDS("Mono.rds")
+library(Seurat)
+CD14 <- subset(Mono,idents = c("Mono_CD14_DLEU2","Mono_CD14_CSMD1","Mono_CD14_CXCR4"))
+sce.tmp=CD14[,sample(1:ncol(CD14),round(ncol(CD14)/50))]
+expr_matrix <- as(as.matrix(sce.tmp@assays$RNA@counts),"sparseMatrix")
+p_data <- sce.tmp@meta.data
+p_data$cell_type <- sce.tmp@active.ident 
+f_data <- data.frame(gene_short_name=row.names(sce.tmp),row.names = row.names(sce.tmp))
+pd <- new("AnnotatedDataFrame",data=p_data)
+fd <- new("AnnotatedDataFrame",data=f_data)
+cds <- newCellDataSet(expr_matrix,phenoData = pd,featureData = fd,lowerDetectionLimit = 0.5,expressionFamily = negbinomial.size())
+cds <- estimateSizeFactors(cds)  
+cds <- estimateDispersions(cds,cores=10)
+cds <- detectGenes(cds,min_expr = 0.1)
+expressed_genes <- row.names(subset(fData(cds),num_cells_expressed>=10))
+diff <- differentialGeneTest(cds[expressed_genes],fullModelFormulaStr = "~cell_type",cores = 10)
+deg <- subset(diff,qval<0.01)
+deg <- deg[order(deg$qval,decreasing = F),]
+ordergene <- rownames(deg)
+ordergene <- row.names(deg)[order(deg$qval)][1:400]
+cds <- setOrderingFilter(cds,ordergene)
+plot_ordering_genes(cds)  
+cds <- reduceDimension(cds,max_components = 2,num_dim=10, norm_method="log",reduction_method="DDRTree")
+cds <- orderCells(cds)
+plot_cell_trajectory(cds,color_by = "cell.type",size=1,show_backbone = TRUE)
+plot_cell_trajectory(cds,color_by = "State",size=1,show_backbone = TRUE)
+plot_cell_trajectory(cds,color_by = "Pseudotime",size=1,show_backbone = TRUE)
+plot_cell_trajectory(cds,color_by = "group",size=1,show_backbone = TRUE)
+
+
+##Figure S7B
+plot_cell_trajectory(cds,color_by = "State")##可见有多少个分支点，多少分支簇  
+beam_res <- BEAM(cds[ordergene,],branch_point = 1,cores = 2)
+beam_res <- beam_res[order(beam_res$qval),]
+beam_res <- beam_res[,c("gene_short_name","pval","qval")]
+tmp1=plot_genes_branched_heatmap(cds[row.names(subset(beam_res,qval<1e-4)),],
+                                 branch_point = 1,
+                                 num_clusters = 3, 
+                                 cores = 2,
+                                 branch_labels = c("State 3", "State 4"),
+                                 branch_colors = c("#979797", "#F05662", "#7990C8"), #pre-branch, Cell fate 1, Cell fate 2分别用什么颜色
+                                 use_gene_short_name = T,
+                                 show_rownames = F,
+                                 return_heatmap = T
+)
+gene_group <- tmp1$annotation_row
+gene_group$gene <- rownames(gene_group)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+allcluster_go=data.frame()
+for (i in unique(gene_group$Cluster)) {
+  small_gene_group=filter(gene_group,gene_group$Cluster==i)
+  df_name=bitr(small_gene_group$gene, fromType="SYMBOL", toType=c("ENTREZID"), OrgDb="org.Hs.eg.db")
+  go <- enrichGO(gene         = unique(df_name$ENTREZID),
+                 OrgDb         = org.Hs.eg.db,
+                 keyType       = 'ENTREZID',
+                 ont           = "BP",
+                 pAdjustMethod = "BH",
+                 pvalueCutoff  = 0.05,
+                 qvalueCutoff  = 0.05,
+                 readable      = TRUE)
+  go_res=go@result
+  if (dim(go_res)[1] != 0) {
+    go_res$cluster=i
+    allcluster_go=rbind(allcluster_go,go_res)
+  }
+}
+go <- allcluster_go%>%group_by(cluster)%>%top_n(n = -10,wt = p.adjust)%>%ungroup
+
+
+##Figure S7C
+Mono <- readRDS("Mono.rds")
+library(Seurat)
+JARID2 <- subset(Mono,idents = c("Mono_CD14_CXCR4"))
+Idents(JARID2) <- JARID2$group
+JARID2 <- subset(JARID2,idents=c("pbmc.R.pre","pbmc.R.post","pbmc.NR.pre","pbmc.NR.post")
+p <- DotPlot(JARID2,features = c("CXCR4","SPI1"))
+dotplot_data<-p$data
+heatmap_data<-dotplot_data%>%
+  select(features.plot,id,avg.exp.scaled)%>%
+  pivot_wider(names_from=features.plot,values_from=avg.exp.scaled)
+heatmap_data=column_to_rownames(heatmap_data,var="id")
+
+# Generate the heatmap
+pheatmap(heatmap_data,
+         color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdBu")))(100),show_rownames = TRUE,
+         show_colnames = TRUE,
+         cluster_rows = F,cluster_cols = F,
+         scale = "column" ,cellheight = 10,cellwidth = 10,fontsize = 10, border_color = "white")
