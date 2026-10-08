@@ -1,0 +1,1942 @@
+##Figure 1B
+import pandas as pd
+import anndata as ad 
+import scirpy as ir
+import os
+import numpy as np
+import scanpy as sc
+import scirpy as ir
+from cycler import cycler
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import diopy
+import sys
+from matplotlib.pyplot import rc_context
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+sc.settings.verbosity = 1
+import matplotlib as mpl
+mpl.rcParams['axes.linewidth'] = 1.5    
+mpl.rcParams['axes.edgecolor'] = 'black'
+Myeloid=diopy.input.read_h5("Myeloid.h5")
+with rc_context({'figure.figsize': (5,5)}):
+    sc.pl.umap(
+        Myeloid,
+        color='cell.type',
+        show=False,
+        legend_fontsize=20
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("cell.type", fontsize=20)
+for spine in ax.spines.values():
+    spine.set_linewidth(2.0)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("Myeloid.cell.type.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+##Figure1C
+Myeloid <- readRDS("Myeloid.rds")
+yy_Dotplot <- function(seuratObj,
+                       genes, 
+                       group.by,
+                       coord_flip = FALSE,
+                       scale = TRUE,
+                       dot.scale = 4,
+                       gene_expr_cutoff = -Inf,
+                       gene_pct_cutoff = 0,
+                       cell_expr_cutoff = -Inf,
+                       cell_pct_cutoff = 0,
+                       panel.spacing_distance = 0.5,
+                       return_data = FALSE) {
+  
+  # Parameters
+  col.min <- -2.5
+  col.max <- 2.5
+  dot.min <- 0
+  
+  # Reformat genes
+  if (is.list(genes)) {
+    if (is.null(names(genes))) {
+      names(genes) <- 1:length(genes)
+    }
+    genes <- stack(genes)
+    features <- genes$values
+    features_group <- genes$ind
+  } else {
+    features <- genes
+    features_group <- NULL
+  }
+  
+  # Check for missing genes
+  subset <- features %in% rownames(seuratObj)
+  if (sum(!subset) > 0) {
+    cat(paste0(paste(features[!subset], collapse = ", "), " is missing in gene list"))
+  }
+  if (length(features) == 0) {
+    stop("No intersecting genes, please check gene name format.\n")
+  }
+  
+  # Prepare plot input
+  data.features <- FetchData(seuratObj, cells = colnames(seuratObj), vars = features, slot = "data")
+  data.features$id <- seuratObj@meta.data[[group.by]]
+  
+  data.plot <- lapply(unique(data.features$id), function(ident) {
+    data.use <- data.features[data.features$id == ident, 1:(ncol(data.features) - 1), drop = FALSE]
+    avg.exp <- apply(data.use, 2, function(x) mean(expm1(x)))
+    pct.exp <- apply(data.use, 2, function(x) sum(x > 0) / length(x))
+    list(avg.exp = avg.exp, pct.exp = pct.exp)
+  })
+  names(data.plot) <- unique(data.features$id)
+  data.plot <- lapply(names(data.plot), function(x) {
+    data.use <- as.data.frame(data.plot[[x]])
+    data.use$features.plot <- rownames(data.use)
+    data.use$features.plot_show <- features
+    data.use$id <- x
+    data.use
+  })
+  data.plot <- do.call(rbind, data.plot)
+  
+  avg.exp.scaled <- sapply(unique(data.plot$features.plot), function(x) {
+    data.use <- data.plot[data.plot$features.plot == x, "avg.exp"]
+    if (scale) {
+      data.use <- scale(data.use)
+      MinMax(data.use, min = col.min, max = col.max)
+    } else {
+      log1p(data.use)
+    }
+  })
+  avg.exp.scaled <- as.vector(t(avg.exp.scaled))
+  
+  data.plot$avg.exp.scaled <- avg.exp.scaled
+  data.plot$features.plot <- factor(data.plot$features.plot, levels = unique(data.plot$features.plot))
+  data.plot$features.plot_show <- factor(data.plot$features.plot_show, levels = unique(features))
+  
+  data.plot$pct.exp[data.plot$pct.exp < dot.min] <- NA
+  data.plot$pct.exp <- data.plot$pct.exp * 100
+  
+  if (is.factor(seuratObj@meta.data[[group.by]])) {
+    data.plot$id <- factor(data.plot$id, levels = levels(seuratObj@meta.data[[group.by]]))
+  }
+  
+  if (!is.null(features_group)) {
+    data.plot <- data.plot %>%
+      left_join(data.frame(features = features, features_group = features_group), by = c("features.plot_show" = "features")) %>%
+      mutate(features_group = factor(features_group, levels = unique(features_group)))
+  }
+  
+  # Filter genes/cells
+  filter_cell <- data.plot %>%
+    group_by(id) %>%
+    summarise(max_exp = max(avg.exp.scaled), max_pct = max(pct.exp)) %>%
+    filter(max_exp >= cell_expr_cutoff & max_pct >= cell_pct_cutoff)
+  filter_gene <- data.plot %>%
+    group_by(features.plot) %>%
+    summarise(max_exp = max(avg.exp.scaled), max_pct = max(pct.exp)) %>%
+    filter(max_exp >= gene_expr_cutoff & max_pct >= gene_pct_cutoff)
+  
+  data.plot <- data.plot %>%
+    filter(features.plot %in% filter_gene$features.plot) %>%
+    filter(id %in% filter_cell$id)
+  
+  # Plot
+  plot <- ggplot(data.plot, aes(x = features.plot, y = id)) +
+    geom_point(aes(size = pct.exp, color = avg.exp.scaled)) +
+    scale_radius(range = c(0, dot.scale)) +
+    scale_color_gradientn(colors = brewer.pal(9, "RdBu")[9:1]) +
+    guides(size = guide_legend(title = "Percent expressed"), color = guide_colorbar(title = "Average expression")) +
+    theme(
+      axis.text.x = element_text(size = 8, angle = 45, hjust = 1,colour = "black"),
+      axis.text.y = element_text(size = 8,colour = "black"),
+      text = element_text(size = 8),
+      plot.margin = unit(c(1, 1, 1, 1), "char"),
+      panel.background = element_rect(colour = "black", fill = "white"),
+      panel.grid = element_line(colour = "grey", linetype = "dashed", size = 0.2)
+    ) +
+    labs(x = "", y = "")
+  
+  if (coord_flip) {
+    plot <- plot + coord_flip()
+  }
+  
+  if (!is.null(features_group)) {
+    plot <- plot +
+      facet_grid(. ~ features_group, scales = "free_x", space = "free_x", switch = "y") +
+      theme(panel.spacing = unit(panel.spacing_distance, "lines"), strip.background = element_blank())
+  }
+  
+  if (return_data) {
+    return(list(plot = plot, data = data.plot))
+  } else {
+    return(plot)
+  }
+}
+
+gene_list = list(
+  c("LYZ","CD14","FCGR3A"),
+  c("CSF3R","CXCR1"),
+  c("FCER1A","CLEC9A","CLEC10A"),
+  c("CLEC4C","IRF7"),
+  c("CPA3","TPSAB1"),
+  c("C1QC","C1QB","CD163"),
+  c("MKI67","STMN1")
+)
+
+
+p = yy_Dotplot(seuratObj = Myeloid,
+               genes = gene_list,
+               group.by = "celltype")
+p +
+  theme(
+    panel.spacing = unit(x = 0.2, units = "lines"),
+    strip.background = element_blank(),
+    text = element_text(size = 0),
+    panel.grid = element_line(
+      colour = "grey",
+      linetype = "dashed",
+      size = 0.2
+    )
+  ) + theme(
+    axis.text.x = element_text(
+      size = 10,face = "italic"
+    ),
+    axis.text.y = element_text(size = 10),
+  ) + xlab("") + ylab("") +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
+    legend.position = 'bottom',
+    legend.key.size = unit(0.3, "inch"),
+    plot.margin = unit(c(0, 1, 0, 0), "char")
+  ) +
+  scale_radius(limits = c(0, 100))
+
+
+
+
+##Figure1D
+x=as.data.frame(Myeloid@active.ident)
+df1 <- Myeloid@reductions$umap@cell.embeddings
+df1<- cbind(df1,as.data.frame(Myeloid@meta.data))
+get_density <-function(x,y,...){
+  dens <- MASS::kde2d(x,y,...)
+  ix <- findInterval(x,dens$x)
+  iy <- findInterval(y,dens$y)
+  ii <- cbind(ix,iy)
+  return(dens$z[ii])
+}
+for(i in unique(df1$responsess)){
+  id <- which(df1$responsess==i)
+  gd <- get_density(df1$umap_1[id],df1$umap_2[id],n=100)
+  df1[id,"Density"] <- gd/max(gd)
+}
+df1$responsess <- factor(
+  df1$responsess,
+  levels = c("Responder", "Non-Responder"), 
+)
+ggplot(df1, aes(UMAP_1, UMAP_2, color = Density)) +
+  geom_point(size = 0.15, shape = ".", alpha = 0.7) +
+  theme_classic(base_size = 15) +
+  facet_wrap(
+    ~responsess,
+    ncol = 2,       
+    strip.position = "top", 
+    scales = "fixed" 
+  ) +
+  scale_color_viridis_c(
+    option = "C",
+    direction = 1,
+    breaks = seq(0, 1, 0.25),
+    name = "Density"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(4, "cm"),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    strip.text = element_text(angle = 0, size = 16, hjust = 0),
+    strip.background = element_blank(),
+    axis.text = element_text(size = 12), 
+    axis.ticks = element_line(linewidth = 0.5),
+    axis.title = element_text(size = 14),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
+    panel.spacing = unit(1.5, "cm")
+  )+
+  guides(
+    color = guide_colorbar(
+      barwidth = 15,
+      barheight = 1.2,
+      title.position = "top",
+      title.hjust = 0.5
+    )
+  )+NoLegend()
+
+##Figure1E
+orig_stats <- meta %>%
+group_by(orig.ident, responsess) %>%
+mutate(total_cells = n()) %>%
+ungroup() %>%
+group_by(orig.ident, responsess, cell.type) %>%
+summarise(
+cell_count = n(),
+total_cells = first(total_cells),
+cell_ratio = cell_count / total_cells,
+.groups = "drop"
+)
+sce_groups =as.character(levels(Idents(a)))
+for(i in 1:length(sce_groups)){
+target_cell <- sce_groups[i]
+plot_data <- orig_stats %>%
+filter(cell.type == target_cell)
+p <- ggplot(plot_data, aes(x = responsess, y = cell_ratio, fill = responsess)) +
+geom_boxplot(
+width = 0.6,
+alpha = 0.7,
+outlier.shape = NA
+) +
+theme_classic()+
+stat_compare_means(method = "wilcox.test",
+comparisons = list(c("Responder","Non-Responder")),
+label = "p.signif",size=10)+
+labs(
+y = paste0("Proportion"),
+title = paste0( target_cell),
+fill = "Response Group"
+) +
+theme_bw() + 
+theme(
+plot.title = element_text(hjust = 0.5, size = 14),
+axis.text.x = element_blank(),
+axis.title = element_blank(),
+axis.text.y = element_text(size = 11,colour = "black")
+)+
+scale_fill_manual(values = c( "Responder" = '#1F78B4',"Non-Responder" = '#E31A1C' ))+
+NoLegend()
+print(p) 
+}
+
+##Figure1F
+x=as.data.frame(Myeloid@active.ident)
+df1 <- Myeloid@reductions$umap@cell.embeddings
+df1<- cbind(df1,as.data.frame(Myeloid@meta.data))
+get_density <-function(x,y,...){
+  dens <- MASS::kde2d(x,y,...)
+  ix <- findInterval(x,dens$x)
+  iy <- findInterval(y,dens$y)
+  ii <- cbind(ix,iy)
+  return(dens$z[ii])
+}
+for(i in unique(df1$status)){
+  id <- which(df1$status==i)
+  gd <- get_density(df1$umap_1[id],df1$umap_2[id],n=100)
+  df1[id,"Density"] <- gd/max(gd)
+}
+df1$responsess <- factor(
+  df1$status,
+  levels = c("Pre", "On","Post), 
+)
+ggplot(df1, aes(UMAP_1, UMAP_2, color = Density)) +
+  geom_point(size = 0.15, shape = ".", alpha = 0.7) +
+  theme_classic(base_size = 15) +
+  facet_wrap(
+    ~status,
+    ncol = 3,       
+    strip.position = "top", 
+    scales = "fixed" 
+  ) +
+  scale_color_viridis_c(
+    option = "C",
+    direction = 1,
+    breaks = seq(0, 1, 0.25),
+    name = "Density"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(4, "cm"),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    strip.text = element_text(angle = 0, size = 16, hjust = 0),
+    strip.background = element_blank(),
+    axis.text = element_text(size = 12), 
+    axis.ticks = element_line(linewidth = 0.5),
+    axis.title = element_text(size = 14),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
+    panel.spacing = unit(1.5, "cm")
+  )+
+  guides(
+    color = guide_colorbar(
+      barwidth = 15,
+      barheight = 1.2,
+      title.position = "top",
+      title.hjust = 0.5
+    )
+  )+NoLegend()
+
+
+##Figure1G
+Idents(Myeloid) <- Myeloid$responsess
+NR <- subset(Myeloid,idents="Non-Responder")
+R <- subset(Myeloid,idents="Responder")
+meta <- NR@meta.data
+orig_stats <- meta %>%
+  group_by(orig.ident, status) %>%
+  mutate(total_cells = n()) %>%
+  group_by(orig.ident, status, cell.type) %>%
+  summarise(
+    cell_count = n(),
+    total_cells = first(total_cells),
+    cell_ratio = cell_count / total_cells
+  ) %>%
+  ungroup()
+orig_stats$status <- factor(orig_stats$status,levels = c("Pre","On","Post"))
+plot_data <- orig_stats %>%
+  group_by(cell.type, status) %>%
+  summarise(
+    mean_ratio = mean(cell_ratio),
+    se_ratio = sd(cell_ratio)/sqrt(n()),
+    .groups = "drop"
+  )
+p <- ggplot() +
+  geom_col(
+    data = plot_data,
+    aes(x = cell.type, y = mean_ratio, fill = status),
+    width = 0.7, 
+    position = position_dodge(width = 0.8),
+    alpha = 0.8
+  ) +
+  geom_errorbar(
+    data = plot_data,
+    aes(x = cell.type, ymin = mean_ratio - se_ratio, ymax = mean_ratio + se_ratio, group = status),
+    width = 0.2,
+    position = position_dodge(width = 0.8)
+  ) +
+  labs(
+    x = "",
+    y = "proportion",
+    fill = "Status",
+    title = "Non-Responder"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5)
+  ) +
+  scale_fill_manual(values = c("On" = "#FF6B6B", "Pre" = "#4ECDC4", "Post" = "#7B68EE"))
+print(p)
+
+meta <- R@meta.data
+orig_stats <- meta %>%
+  group_by(orig.ident, status) %>%
+  mutate(total_cells = n()) %>%
+  group_by(orig.ident, status, cell.type) %>%
+  summarise(
+    cell_count = n(),
+    total_cells = first(total_cells),
+    cell_ratio = cell_count / total_cells
+  ) %>%
+  ungroup()
+orig_stats$status <- factor(orig_stats$status,levels = c("Pre","On","Post"))
+plot_data <- orig_stats %>%
+  group_by(cell.type, status) %>%
+  summarise(
+    mean_ratio = mean(cell_ratio),
+    se_ratio = sd(cell_ratio)/sqrt(n()),
+    .groups = "drop"
+  )
+p <- ggplot() +
+  geom_col(
+    data = plot_data,
+    aes(x = cell.type, y = mean_ratio, fill = status),
+    width = 0.7, 
+    position = position_dodge(width = 0.8),
+    alpha = 0.8
+  ) +
+  geom_errorbar(
+    data = plot_data,
+    aes(x = cell.type, ymin = mean_ratio - se_ratio, ymax = mean_ratio + se_ratio, group = status),
+    width = 0.2,
+    position = position_dodge(width = 0.8)
+  ) +
+  labs(
+    x = "",
+    y = "proportion",
+    fill = "Status",
+    title = "Responder"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5)
+  ) +
+  scale_fill_manual(values = c("On" = "#FF6B6B", "Pre" = "#4ECDC4", "Post" = "#7B68EE"))
+print(p)
+
+
+p_value_results <- orig_stats %>%
+  group_by(cell.type) %>% 
+  do({
+    resp_data <- .$cell_ratio[.$responsess == "Responder"]
+    nonresp_data <- .$cell_ratio[.$responsess == "Non-Responder"]
+    if (length(resp_data) > 0 && length(nonresp_data) > 0) {
+      test_result <- wilcox.test(resp_data, nonresp_data)
+      p_val <- test_result$p.value
+    } else {
+      p_val <- NA
+    }
+    tibble(
+      cell.type = unique(.$cell.type),
+      p_value = p_val,
+      sig_mark = case_when(
+        is.na(p_val) ~ "",
+        p_val < 0.001 ~ "***",
+        p_val < 0.01 ~ "**",
+        p_val < 0.05 ~ "*",
+        TRUE ~ "ns"
+      )
+    )
+  }) %>%
+  ungroup()
+print(p_value_results)
+
+
+
+##FigureS1A
+divMatrix <- function(m1, m2){
+  dim_m1 <- dim(m1)
+  dim_m2 <- dim(m2)
+  if( sum(dim_m1 == dim_m2) == 2 ){
+    div.result <- matrix( rep(0,dim_m1[1] * dim_m1[2]) , nrow = dim_m1[1] )
+    row.names(div.result) <- row.names(m1)
+    colnames(div.result) <- colnames(m1)
+    for(i in 1:dim_m1[1]){
+      for(j in 1:dim_m1[2]){
+        div.result[i,j] <- m1[i,j] / m2[i,j]
+      }
+    }   
+    return(div.result)
+  }
+  else{
+    warning("The dimensions of m1 and m2 are different")
+  }
+}
+
+
+ROIE <- function(crosstab){
+  rowsum.matrix <- matrix(0, nrow = nrow(crosstab), ncol = ncol(crosstab))
+  rowsum.matrix[,1] <- rowSums(crosstab)
+  colsum.matrix <- matrix(0, nrow = ncol(crosstab), ncol = ncol(crosstab))
+  colsum.matrix[1,] <- colSums(crosstab)
+  allsum <- sum(crosstab)
+  roie <- divMatrix(crosstab, rowsum.matrix %*% colsum.matrix / allsum)
+  row.names(roie) <- row.names(crosstab)
+  colnames(roie) <- colnames(crosstab)
+  return(roie)
+}
+
+Myeloid.data <- Myeloid@meta.data
+plot_df = Myeloid.data %>% 
+  filter(site %in% c("Blood","Tumor","Adjacent tissue"))
+plot_df$cell.type = as.character(plot_df$cell.type)
+plot_df$site = as.character(plot_df$site)
+summary <- table(plot_df[,c('cell.type','site')])
+roe <- as.data.frame(ROIE(summary))
+roe <- roe[,c("Blood","Tumor","Adjacent tissue")]
+require(ComplexHeatmap)
+require(circlize)
+col_fun <- colorRamp2(c(0, 1, 1.5, 2),c("#fffde7", "#ffe0b2","#ff9800", "#e65100"))
+Heatmap(
+  roe,
+  col = col_fun,
+  cluster_rows = T,
+  cluster_columns = F,
+  clustering_distance_rows = "euclidean",
+  clustering_method_rows = "ward.D",
+  column_names_gp = grid::gpar(fontsize = 10),
+  row_names_gp = grid::gpar(fontsize = 10),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    grid.text(sprintf("%.1f", roe[i, j]), x, y, gp = gpar(fontsize = 10))
+  },
+  width = ncol(roe) * unit(0.8, "inch"),
+  height = nrow(roe) * unit(0.5, "inch"),
+  column_title = "Tissue preference of each Myeloid cell",  
+  name = "Ro/e"
+)
+
+
+Myeloid.data$diff <- paste0(Myeloid.data$site,"_",Myeloid.data$Cancer)
+plot_df = Myeloid.data %>%
+filter(diff %in% c("Tumor_GC","Tumor_ccRC","Tumor_CRC","Tumor_HCC","Tumor_GBM","Tumor_BRC","Tumor_HNSCC","Tumor_NSCLC"))
+plot_df$cell.type = as.character(plot_df$cell.type)
+plot_df$diff = as.character(plot_df$diff)
+summary <- table(plot_df[,c('cell.type','diff')])
+roe <- as.data.frame(ROIE(summary))
+roe <- roe[,c("Tumor_GC","Tumor_ccRC","Tumor_CRC","Tumor_HCC","Tumor_GBM","Tumor_BRC","Tumor_HNSCC","Tumor_NSCLC")]
+require(ComplexHeatmap)
+require(circlize)
+col_fun <- colorRamp2(c(0, 1, 1.5, 2),
+c("#fffde7", "#ffe0b2","#ff9800", "#e65100"))
+Heatmap(
+roe,
+col = col_fun,
+cluster_rows = F,
+cluster_columns = F,
+clustering_distance_rows = "euclidean",
+clustering_method_rows = "ward.D",
+column_names_gp = grid::gpar(fontsize = 10),
+row_names_gp = grid::gpar(fontsize = 10),
+cell_fun = function(j, i, x, y, width, height, fill) {
+grid.text(sprintf("%.1f", roe[i, j]), x, y, gp = gpar(fontsize = 10))
+},
+width = ncol(roe) * unit(0.8, "inch"),
+height = nrow(roe) * unit(0.5, "inch"),
+column_title = "Tissue preference of each Myeloid cell",
+name = "Ro/e"
+)
+  
+
+  
+Myeloid.data$diff <- paste0(Myeloid.data$site,"_",Myeloid.data$Cancer)
+plot_df = Myeloid.data %>%
+filter(diff %in% c("Blood_NPC","Blood_HNSCC","Blood_UCEC","Blood_BRC","Blood_GC","Blood_HCC","Blood_HL","Blood_BAC","Blood_ccRC","Blood_CRC","Blood_MCC","Blood_Melanoma"))
+plot_df$cell.type = as.character(plot_df$cell.type)
+plot_df$diff = as.character(plot_df$diff)
+summary <- table(plot_df[,c('cell.type','diff')])
+roe <- as.data.frame(ROIE(summary))
+roe <- roe[,c("Blood_NPC","Blood_HNSCC","Blood_UCEC","Blood_BRC","Blood_GC","Blood_HCC","Blood_HL","Blood_BAC","Blood_ccRC","Blood_CRC","Blood_MCC","Blood_Melanoma")]
+require(ComplexHeatmap)
+require(circlize)
+col_fun <- colorRamp2(c(0, 1, 1.5, 2),
+c("#fffde7", "#ffe0b2","#ff9800", "#e65100"))
+Heatmap(
+roe,
+col = col_fun,
+cluster_rows = F,
+cluster_columns = F,
+clustering_distance_rows = "euclidean",
+clustering_method_rows = "ward.D",
+column_names_gp = grid::gpar(fontsize = 10),
+row_names_gp = grid::gpar(fontsize = 10),
+cell_fun = function(j, i, x, y, width, height, fill) {
+grid.text(sprintf("%.1f", roe[i, j]), x, y, gp = gpar(fontsize = 10))
+},
+width = ncol(roe) * unit(0.8, "inch"),
+height = nrow(roe) * unit(0.5, "inch"),
+column_title = "Tissue preference of each Myeloid cell",
+name = "Ro/e"
+)
+
+
+
+##FigureS1B
+Idents(Myeloid) <- Myeloid$Cancer
+NSCLC <- subset(Myeloid,idents="NSCLC")
+BRC <- subset(Myeloid,idents="BRC")
+CRC <- subset(Myeloid,idents="CRC")
+HCC <- subset(Myeloid,idents="HCC")
+
+meta <- NSCLC@meta.data
+orig_stats <- meta %>%
+  group_by(orig.ident, responsess) %>%
+  mutate(total_cells = n()) %>%
+  group_by(orig.ident, responsess, cell.type) %>%
+  summarise(
+    cell_count = n(),
+    total_cells = first(total_cells),
+    cell_ratio = cell_count / total_cells
+  ) %>%
+  ungroup()
+orig_stats$responsess <- factor(orig_stats$responsess,levels = c("Responder","Non-Responder"))
+plot_data <- orig_stats %>%
+  group_by(cell.type, responsess) %>%
+  summarise(
+    mean_ratio = mean(cell_ratio),
+    se_ratio = sd(cell_ratio)/sqrt(n()),
+    .groups = "drop"
+  )
+p <- ggplot() +
+  geom_col(
+    data = plot_data,
+    aes(x = cell.type, y = mean_ratio, fill = responsess),
+    width = 0.7, 
+    position = position_dodge(width = 0.8),
+    alpha = 0.8
+  ) +
+  geom_errorbar(
+    data = plot_data,
+    aes(x = cell.type, ymin = mean_ratio - se_ratio, ymax = mean_ratio + se_ratio, group = responsess),
+    width = 0.2,
+    position = position_dodge(width = 0.8)
+  ) +
+  labs(
+    x = "",
+    y = "proportion",
+    fill = "cell.type",
+    title = "NSCLC"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5)
+  ) +
+  scale_fill_manual(values = c("Responder" = "#1F78B4", "Non-Responder" = "#E31A1C"))+
+  stat_compare_means(method = "wilcox.test",comparisons = list(c("Responder","Non-Responder"))
+print(p)
+
+
+##FigureS1C
+CD45=diopy.input.read_h5("CD45.h5")
+with rc_context({'figure.figsize': (5,5)}):
+    sc.pl.umap(
+        CD45,
+        color='cell.type',
+        show=False,
+        legend_fontsize=20
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("cell.type", fontsize=20)
+for spine in ax.spines.values():
+    spine.set_linewidth(2.0)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("CD45.cell.type.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+with rc_context({'figure.figsize': (5,5)}):
+    sc.pl.umap(
+        CD45,
+        color='Cancer',
+        show=False,
+        legend_fontsize=20
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("Cancer", fontsize=20)
+for spine in ax.spines.values():
+    spine.set_linewidth(2.0)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("CD45.Cancer.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+a=diopy.input.read_h5("CD45.subset.h5")
+with rc_context({'figure.figsize': (5,5)}):
+    sc.pl.umap(
+        a,
+        color='copykat',
+        show=False,
+        legend_fontsize=20
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("Malignant cell", fontsize=20)
+for spine in ax.spines.values():
+    spine.set_linewidth(2.0)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("CD45.malignant.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+
+##Figure2A
+Neu=diopy.input.read_h5("Neu.h5")
+DC=diopy.input.read_h5("DC.h5")
+Mono=diopy.input.read_h5("Mono.h5")
+import scanpy as sc
+import matplotlib.pyplot as plt
+from matplotlib import rc_context
+celltype_mapping = {
+    "Neu_VCAN": 1,
+    "Neu_CCL4": 2,
+    "Neu_IL1B": 3,
+    "Neu_NECTIN2": 4,
+    "Neu_MMP8": 5,
+    "Neu_TMCC1": 6,
+    "Neu_SLC16A3": 7,
+    "Neu_CD74": 8,
+    "Neu_MKI67": 9,
+    "Neu_HSPA1A": 10,
+    "Neu_SCGB3A1": 11,
+    "Neu_NAMPTP1": 12,
+    "Neu_ISG15": 13,
+}
+Neu.obs['showlist'] = Neu.obs['cell.type'].replace(celltype_mapping)
+Neu.obs['showlist'] = Neu.obs['showlist'].astype('category')
+Neu.obs['showlist'] = Neu.obs['showlist'].cat.set_categories(sorted(celltype_mapping.values()))
+custom_colors = {
+    1: "#ebafa4",
+    2: "#EE4C97",
+    3: "#ECE4B7",
+    4: "#e5d25b",
+    5: "#608541",
+    6: "#BC3C29",
+    7: "#6F99AD",
+    8: "#0072B5",
+    9: "#CFC59A",
+    10: "#E18727",
+    11: "#9394E7",
+    12: "#63E398",
+    13: "#D1352B"
+}
+sorted_colors = [custom_colors[cat] for cat in Neu.obs['showlist'].cat.categories]
+with rc_context({'figure.figsize': (5, 5)}):
+    sc.pl.umap(
+        Neu,
+        color='showlist',
+        palette=sorted_colors,
+        legend_loc='on data',  
+        show=False,
+        legend_fontsize=21
+    )
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("Neu", fontsize=20)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("Neu.UMAP.png", dpi=600, bbox_inches='tight')
+plt.show()
+
+
+custom_colors = {
+    "cDC1_CLEC9A": "#2171a9",
+    "cDC2_CCL4": "#abc3e2",
+    "cDC2_C1QC": "#ef7c20",
+    "cDC2_FCN1": "#339939",
+    "cDC2_ENHO": "#f4f085",
+    "cDC2_CD207": "#ca553f",
+    "cDC2_IL1R2": "#f7ba79",
+    "cDC2_DLEU2": "#847eb7",
+    "cDC2_CXCL9": "#bd2724",
+    "cDC3_LAMP3": "#e5aaa6",
+    "pDC_LILRA4": "#ebcede"
+}
+celltype_mapping = {
+    "cDC1_CLEC9A": "1",
+    "cDC2_CCL4": "2",
+    "cDC2_C1QC": "3",
+    "cDC2_FCN1": "4",
+    "cDC2_ENHO": "5",
+    "cDC2_CD207": "6",
+    "cDC2_IL1R2": "7",
+    "cDC2_DLEU2": "8",
+    "cDC2_CXCL9": "9",
+    "cDC3_LAMP3": "10",
+    "pDC_LILRA4": "11"
+}
+DC.obs['showlist'] = DC.obs['cell.type'].replace(celltype_mapping)
+print(DC.obs[['cell.type', 'showlist']].head())
+print(DC.obs[['cell.type', 'showlist']].head())
+with rc_context({'figure.figsize': (5, 5)}):
+    sc.pl.umap(
+    DC,
+    color='showlist',
+    palette=list(custom_colors.values()),
+    legend_loc='on data',
+    legend_fontsize=21,
+    show=False)
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("DC", fontsize=20)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("DC。UMAP.png", dpi=600, bbox_inches='tight')
+plt.show()
+
+
+custom_colors = {
+    "Mono_CD16": "#D2EBC8",
+    "Mono_CD14_DLEU2": "#7DBFA7",
+    "Mono_CD14_CSMD1": "#EE934E",
+    "Mono_CD14_JARID2": "#9B5B33",
+    "Mono_CD14_LGALS2": "#B383B9",
+    "Mono_CD14_TNF": "#FCED82",
+    "Mono_CD14_PADI4": "#BBDD78",
+    "Mono_CD14_PPBP": "#AECDE1",
+    "Intermediate Monocyte": "#0072B5",
+    "Macro_TREM2": "#D1352B",
+    "Macro_CCL20": "#F5CFE4",
+    "Macro_ELL2": "#8FA4AE",
+    "Macro_SLC40A1": "#F5D2A8",
+    "Macro_SPP1": "#95A6DA",
+    "Macro_MRC1": "#89B780",
+    "Macro_STMN1": "#3C77AF",
+    "Macro_CCL4": "#173565",
+    "Macro_CXCL9": "#EE4C97"
+}
+celltype_mapping = {
+    "Mono_CD16": "1",
+    "Mono_CD14_DLEU2": "2",
+    "Mono_CD14_CSMD1": "3",
+    "Mono_CD14_JARID2": "4",
+    "Mono_CD14_LGALS2": "5",
+    "Mono_CD14_TNF": "6",
+    "Mono_CD14_PADI4": "7",
+    "Mono_CD14_PPBP": "8",
+    "Intermediate Monocyte": "9",
+    "Macro_TREM2": "10",
+    "Macro_CCL20": "11",
+    "Macro_ELL2": "12",
+    "Macro_SLC40A1": "13",
+    "Macro_SPP1": "14",
+    "Macro_MRC1": "15",
+    "Macro_STMN1": "16",
+    "Macro_CCL4": "17",
+    "Macro_CXCL9": "18"
+
+}
+Mono.obs['showlist'] = Mono.obs['cell.type'].replace(celltype_mapping)
+print(Mono.obs[['cell.type', 'showlist']].head())
+print(Mono.obs[['cell.type', 'showlist']].head())
+with rc_context({'figure.figsize': (5, 5)}):
+    sc.pl.umap(
+    Mono,
+    color='showlist',
+    palette=list(custom_colors.values()),
+    legend_loc='on data', 
+    legend_fontsize=21,
+    show=False)
+fig = plt.gcf()
+ax = plt.gca()
+ax.set_title("Monocyte & Macrophage", fontsize=20)
+ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=11)
+plt.savefig("Monocyte.UMAP.png", dpi=600, bbox_inches='tight')
+plt.show()
+
+
+
+##Figure2B
+Mono <- readRDS("Mono.rds")
+DC <- readRDS("DC.rds")
+Neu <- readRDS("Neu.rds")
+process_celltype <- function(cell_obj, celltype_name, sample_types = c("ANT", "pbmc", "tumor")) {
+  require(dplyr)
+  require(tidyr)
+  require(purrr)
+  require(reshape2)
+  results <- list()
+  for (sample in sample_types) {
+    message("\nProcessing sample: ", sample)
+    message("Cell types in object: ", toString(unique(cell_obj$cell.type)))
+    Idents(cell_obj) <- "site"  
+    subsetted_data <- subset(cell_obj, idents = sample)
+    if (ncol(subsetted_data) == 0) {
+      warning("No cells found for sample: ", sample)
+      next
+    }
+    prop_data <- subsetted_data@meta.data %>%group_by(orig.ident,cell.type, group) %>%
+      summarise(count = n(), .groups = "drop") %>%
+      group_by(orig.ident) %>%
+      mutate(proportion = count / sum(count), proportion = ifelse(proportion < 0.01, 0, proportion)) %>%
+      ungroup()
+    if (nrow(prop_data) == 0) {
+      warning("prop_data is empty for sample: ", sample)
+      next
+    }
+    prop_data$group <- factor(
+      prop_data$group,
+      levels = c("tumor.NR.post", "tumor.R.post", "tumor.NR.pre", "tumor.R.pre", "tumor.R.On",
+                 "pbmc.NR.post", "pbmc.R.post", "pbmc.NR.pre", "pbmc.R.pre", "pbmc.NR.On", "pbmc.R.On",
+                 "ANT.NR.post", "ANT.R.post", "ANT.NR.pre", "ANT.R.pre", "ANT.R.On")
+    )
+    prop_summary <- prop_data %>%
+      group_by(cell.type, group) %>%
+      summarise(mean_proportion = mean(proportion, na.rm = TRUE), .groups = "drop")
+    wide_data <- dcast(prop_summary, group ~ cell.type, value.var = "mean_proportion", fill = 0)
+    if (sample %in% c("ANT", "tumor")) {
+      group_pairs <- list(
+        c(paste0(sample, ".NR.post"), paste0(sample, ".NR.pre")),
+        c(paste0(sample, ".NR.post"), paste0(sample, ".R.post")),
+        c(paste0(sample, ".NR.pre"), paste0(sample, ".R.pre")),
+        c(paste0(sample, ".R.post"), paste0(sample, ".R.pre")),
+        c(paste0(sample, ".R.pre"), paste0(sample, ".R.On")),
+        c(paste0(sample, ".R.post"), paste0(sample, ".R.On"))
+      )
+    } else if (sample == "Blood") {
+      group_pairs <- list(
+        c("pbmc.NR.post", "pbmc.NR.pre"),
+        c("pbmc.NR.post", "pbmc.R.post"),
+        c("pbmc.NR.pre", "pbmc.R.pre"),
+        c("pbmc.R.post", "pbmc.R.pre"),
+        c("pbmc.R.pre", "pbmc.R.On"),
+        c("pbmc.R.post", "pbmc.R.On"),
+        c("pbmc.NR.post", "pbmc.NR.On"),
+        c("pbmc.NR.pre", "pbmc.NR.On")
+      )
+    }
+    ratio_results <- map_df(colnames(wide_data)[-1], function(cell_type) {
+      map_df(group_pairs, function(pair) {
+        numerator <- wide_data[[cell_type]][wide_data$group == pair[1]]
+        denominator <- wide_data[[cell_type]][wide_data$group == pair[2]]
+        tibble(cell.type = cell_type,ratio = ifelse(length(numerator) == 0 | length(denominator) == 0 | denominator == 0, NA, log(numerator / denominator)),comparison = paste(pair[1], "/", pair[2]),sample_type = sample,cell_class = celltype_name)})})
+    if (nrow(ratio_results) > 0) {
+      ratio_wide <- ratio_results %>%
+        pivot_wider(names_from = comparison, values_from = ratio) %>%
+        mutate(across(where(is.numeric), ~ ifelse(is.na(.), 1, .)))
+      results[[sample]] <- ratio_wide
+    } else {
+      warning("No ratio results for sample: ", sample)
+    }
+  }
+  return(results)
+}
+celltype_list <- list(Mono = Mono,
+                      DC=DC ,
+                      Neu=Neu)
+processed_data <- map2(celltype_list, names(celltype_list), function(cell_obj, name) {
+  process_celltype(cell_obj, name)
+})
+##tumor
+tumor_ratio <- processed_data %>%purrr::map(~ .x[["tumor"]]) %>%purrr::discard(is.null) %>%dplyr::bind_rows(.id = "cell_class")
+tumor_ratio <- as.data.frame(tumor_ratio)
+rownames(tumor_ratio) <- tumor_ratio$cell.type
+tumor_ratio <- tumor_ratio[,-c(1,2,3)]
+tumor_ratio[tumor_ratio>2] <- 2
+
+##blood
+blood_ratio <- processed_data %>%purrr::map(~ .x[["pbmc"]]) %>%purrr::discard(is.null) %>%dplyr::bind_rows(.id = "cell_class")
+blood_ratio <- as.data.frame(blood_ratio)
+rownames(blood_ratio) <- blood_ratio$cell.type
+blood_ratio <- blood_ratio[,-c(1,2,3)]
+blood_ratio[blood_ratio>2] <- 2
+blood_ratio <- blood_ratio[c("Mono_CD16","Mono_CD14_DLEU2","Mono_CD14_CSMD1","Mono_CD14_JARID2","Mono_CD14_LGALS2","Mono_CD14_TNF","Mono_CD14_PADI4","Mono_CD14_PPBP","Intermediate Monocyte","cDC3_LAMP3","cDC2_CXCL9","pDC_LILRA4","cDC2_ENHO","cDC2_IL1R2","cDC2_FCN1","cDC2_DLEU2","cDC2_CCL4","cDC2_C1QC","cDC1_CLEC9A","cDC2_CD207","Neu_VCAN","Neu_CCL4","Neu_IL1B","Neu_NECTIN2","Neu_MMP8","Neu_TMCC1","Neu_SLC16A3","Neu_CD74","Neu_MKI67","Neu_HSPA1A","Neu_SCGB3A1","Neu_NAMPTP1","Neu_ISG15"),]
+
+##ANT
+ant_ratio <- processed_data %>%purrr::map(~ .x[["ANT"]]) %>%purrr::discard(is.null) %>%dplyr::bind_rows(.id = "cell_class")
+ant_ratio <- as.data.frame(ant_ratio)
+rownames(ant_ratio) <- ant_ratio$cell.type
+ant_ratio <- ant_ratio[,-c(1,2,3)]
+ant_ratio <- ant_ratio%>% mutate(across(everything(),~ifelse(is.na(.),1,.)))
+ant_ratio[ant_ratio>2] <- 2
+
+
+
+tumor_ratio_long <- tumor_ratio %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "row") %>%
+  pivot_longer(-row, names_to = "col", values_to = "value")
+tumor_ratio_df <- as.data.frame(tumor_ratio)
+tumor_ratio_df$row <- rownames(tumor_ratio_df)
+tumor_ratio_long <- melt(tumor_ratio_df,id.vars = "row",variable.name = "comparison",value.name = "ratio")
+desired_order <- c(
+  "tumor.R.post / tumor.R.On",
+  "tumor.R.pre / tumor.R.On",
+  "tumor.R.post / tumor.R.pre",
+  "tumor.NR.post / tumor.NR.pre",
+  "tumor.NR.pre / tumor.R.pre",
+  "tumor.NR.post / tumor.R.post"
+)
+
+tumor_ratio_long$comparison <- factor(
+  tumor_ratio_long$comparison,
+  levels = desired_order,
+  ordered = TRUE
+)
+
+tumor_ratio_long$row <- factor(tumor_ratio_long$row,levels = c("Macro_CXCL9","Macro_CCL4","Macro_STMN1","Macro_MRC1","Macro_SPP1","Macro_SLC40A1","Macro_FCGBP","Macro_CCL20","Macro_TREM2","Mono_CD14_TNF","Mono_CD14_PPBP","Mono_CD14_PADI4","Mono_CD14_LGALS2","Mono_CD14_JARID2","Mono_CD14_DLEU2","Mono_CD14_CSMD1","Intermediate Monocyte","Mono_CD16","Neu_CCL4","Neu_SCGB3A1","Neu_NECTIN2","Neu_NAMPTP1","Neu_MMP8","Neu_MKI67","Neu_ISG15","Neu_IL1B","Neu_HSPA1A","Neu_CD74","Neu_SLC16A3","Neu_TMCC1","Neu_VCAN","pDC_LILRA4","cDC3_LAMP3","cDC2_IL1R2","cDC2_FCN1","cDC2_ENHO","cDC2_CXCL9","cDC2_DLEU2","cDC2_CD207","cDC2_CCL4","cDC2_C1QC","cDC1_CLEC9A"))
+
+p1 <- ggplot(tumor_ratio_long, aes(x = comparison, y = row, fill = ratio)) +
+  geom_tile(color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colors = c("#1F78B4", "#FFFFFF", "#FFFFFF", "#E31A1C"),
+    values = c(0, 0.35, 0.65, 1),
+    breaks = c(0, 0.4, 1.6, 2),
+    limits = c(0, 2),
+    na.value = "grey80"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 13, colour = "black"),
+    axis.text.y = element_text(size = 12, colour = "black"),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  ) +
+  labs(
+    fill = "proportion(ratio)",
+    title = "The proportion of Myeloid cells between Tumor groups"
+  ) +
+  coord_flip()+NoLegend()
+
+
+
+blood_ratio_long <- blood_ratio %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "row") %>%
+  pivot_longer(-row, names_to = "col", values_to = "value")
+blood_ratio_df <- as.data.frame(blood_ratio)
+blood_ratio_df$row <- rownames(blood_ratio_df)
+blood_ratio_long <- melt(blood_ratio_df,id.vars = "row",variable.name = "comparison",value.name = "ratio")    
+blood_ratio_long$comparison <- as.character(blood_ratio_long$comparison)
+blood_ratio_long$comparison <- gsub("pbmc","Blood",blood_ratio_long$comparison)
+desired_order <- c(
+  "pbmc.NR.post / pbmc.NR.On",
+  "pbmc.NR.pre / pbmc.NR.On",
+  "pbmc.R.post / pbmc.R.On",
+  "pbmc.R.pre / pbmc.R.On",
+  "pbmc.R.post / pbmc.R.pre",
+  "pbmc.NR.post / pbmc.NR.pre",
+  "pbmc.NR.pre / pbmc.R.pre",
+  "pbmc.NR.post / pbmc.R.post"
+)
+
+blood_ratio_long$comparison <- factor(
+  blood_ratio_long$comparison,
+  levels = desired_order,
+  ordered = TRUE
+)
+
+blood_ratio_long$row <- factor(blood_ratio_long$row,levels = c("Mono_CD14_TNF","Mono_CD14_PPBP","Mono_CD14_PADI4","Mono_CD14_LGALS2","Mono_CD14_JARID2","Mono_CD14_DLEU2","Mono_CD14_CSMD1","Intermediate Monocyte","Mono_CD16","Neu_CCL4","Neu_SCGB3A1","Neu_NECTIN2","Neu_NAMPTP1","Neu_MMP8","Neu_MKI67","Neu_ISG15","Neu_IL1B","Neu_HSPA1A","Neu_CD74","Neu_SLC16A3","Neu_TMCC1","Neu_VCAN","pDC_LILRA4","cDC3_LAMP3","cDC2_IL1R2","cDC2_FCN1","cDC2_ENHO","cDC2_CXCL9","cDC2_DLEU2","cDC2_CD207","cDC2_CCL4","cDC2_C1QC","cDC1_CLEC9A"))
+p2 <- ggplot(blood_ratio_long, aes(x = comparison, y = row, fill = ratio)) +
+  geom_tile(color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colors = c("#1F78B4", "#FFFFFF", "#FFFFFF", "#E31A1C"),
+    values = c(0, 0.35, 0.65, 1),
+    breaks = c(0, 0.4, 1.6, 2),
+    limits = c(0, 2),
+    na.value = "grey80"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 13, colour = "black"),
+    axis.text.y = element_text(size = 12, colour = "black"),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  ) +
+  labs(
+    fill = "proportion(ratio)",
+    title = "The proportion of Myeloid cells between Blood groups"
+  ) +
+  coord_flip()+NoLegend()
+
+ant_ratio_long <- ant_ratio %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "row") %>%
+  pivot_longer(-row, names_to = "col", values_to = "value")
+ant_ratio_df <- as.data.frame(ant_ratio)
+ant_ratio_df$row <- rownames(ant_ratio_df)
+ant_ratio_long <- melt(ant_ratio_df,id.vars = "row",variable.name = "comparison",value.name = "ratio")    
+desired_order <- c(
+  "ANT.R.post / ANT.R.On",
+  "ANT.R.pre / ANT.R.On",
+  "ANT.R.post / ANT.R.pre",
+  "ANT.NR.post / ANT.NR.pre",
+  "ANT.NR.pre / ANT.R.pre",
+  "ANT.NR.post / ANT.R.post"
+)
+
+ant_ratio_long$comparison <- factor(
+  ant_ratio_long$comparison,
+  levels = desired_order,
+  ordered = TRUE
+)
+ant_ratio_long$row <- factor(ant_ratio_long$row,levels = c("Macro_CXCL9","Macro_CCL4","Macro_STMN1","Macro_MRC1","Macro_SPP1","Macro_SLC40A1","Macro_FCGBP","Macro_CCL20","Macro_TREM2","Mono_CD14_TNF","Mono_CD14_PPBP","Mono_CD14_PADI4","Mono_CD14_LGALS2","Mono_CD14_JARID2","Mono_CD14_DLEU2","Mono_CD14_CSMD1","Intermediate Monocyte","Mono_CD16","Neu_CCL4","Neu_SCGB3A1","Neu_NECTIN2","Neu_NAMPTP1","Neu_MMP8","Neu_MKI67","Neu_ISG15","Neu_IL1B","Neu_HSPA1A","Neu_CD74","Neu_SLC16A3","Neu_TMCC1","Neu_VCAN","pDC_LILRA4","cDC3_LAMP3","cDC2_IL1R2","cDC2_FCN1","cDC2_ENHO","cDC2_CXCL9","cDC2_DLEU2","cDC2_CD207","cDC2_CCL4","cDC2_C1QC","cDC1_CLEC9A"))
+p3 <- ggplot(ant_ratio_long, aes(x = comparison, y = row, fill = ratio)) +
+  geom_tile(color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colors = c("#1F78B4", "#FFFFFF", "#FFFFFF", "#E31A1C"),
+    values = c(0, 0.35, 0.65, 1),
+    breaks = c(0, 0.4, 1.6, 2),
+    limits = c(0, 2),
+    na.value = "grey80"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 13, colour = "black"),
+    axis.text.y = element_text(size = 12, colour = "black"),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 14, hjust = 0.5),legend.position = "bottom"
+  ) +
+  labs(
+    fill = "OR",
+    title = "The proportion of Myeloid cells between ANT groups"
+  ) +
+  coord_flip()
+
+
+##Figure2C
+group_levels <- c("tumor.NR.post","tumor.R.post","tumor.NR.pre","tumor.R.pre","tumor.R.On")
+comparison_pairs <- list(
+  NR.R.post       = c("tumor.NR.post", "tumor.R.post"),
+  NR.R.pre        = c("tumor.NR.pre",  "tumor.R.pre"),
+  NR.NR.pre.post  = c("tumor.NR.post", "tumor.NR.pre"),
+  R.R.pre.post    = c("tumor.R.post",  "tumor.R.pre"),
+  R.R.pre.On      = c("tumor.R.pre",   "tumor.R.On"),
+  R.R.post.On     = c("tumor.R.post",  "tumor.R.On")
+)
+all_myeloid_meta <- rownames(meta)
+all_myeloid_meta <- all_myeloid_meta %>%filter(group %in% group_levels)
+sample_total <- all_myeloid_meta %>%group_by(orig.ident) %>%summarise(total_myeloid = n(),.groups = "drop")
+sample_cancer <- all_myeloid_meta %>%dplyr::select(orig.ident, Cancer) %>%distinct()
+group_col_panel <- c("tumor.NR.post" = "#F28E8B","tumor.R.post" = "#F4A6B8","tumor.NR.pre" = "#5B8CCB","tumor.R.pre" = "#8C6BB1","tumor.R.On" = "#B67A59")
+analyse_one_subset <- function(seu,subtype,cell.type_col = "cell.type") {
+  meta <- seu@meta.data
+  cells_use <- rownames(meta)[meta[[cell.type_col]] == subtype &meta$group %in% group_levels]
+  obj <- subset(seu,cells = cells_use)
+  subset_count <- obj@meta.data %>%group_by(orig.ident,group) %>%summarise(subset_count = n(),.groups = "drop")
+  sample_info <- all_myeloid_meta %>%dplyr::select(orig.ident,Cancer,group) %>%distinct()
+  prop_data <- sample_info %>%left_join(subset_count,by = c("orig.ident","group")) %>%mutate(subset_count = replace_na(subset_count,0)) %>%left_join(sample_total,by = "orig.ident") %>% mutate(proportion =subset_count / total_myeloid,cell.type = subtype)
+  prop_data$group <- factor(prop_data$group,levels = group_levels)
+  safe_wilcox <- function(df, g1, g2) {x <- df$proportion[df$group == g1]
+  y <- df$proportion[df$group == g2]
+  x <- x[!is.na(x)]
+  y <- y[!is.na(y)]
+  if (length(x) == 0 ||length(y) == 0) {return(NA_real_)}
+  tryCatch(wilcox.test(x,y,exact = FALSE)$p.value,error = function(e) NA_real_)}
+  stats_list <- lapply(
+    names(comparison_pairs),
+    function(pair_name) {
+      pair <- comparison_pairs[[pair_name]]
+      prop_data %>%filter(group %in% pair) %>%group_by(Cancer) %>%group_modify(~ tibble(n_group1 = sum(.x$group == pair[1]),n_group2 = sum(.x$group == pair[2]),p_value = safe_wilcox(.x,pair[1],pair[2]))) %>%ungroup() %>%mutate(comparison = pair_name,group1 = pair[1],group2 = pair[2])
+    })
+  stats_data <- bind_rows(stats_list)
+  stats_data <- stats_data %>%mutate(p_signif = case_when(is.na(p_value)   ~ NA_character_,p_value < 0.001  ~ "***",p_value < 0.01   ~ "**",p_value < 0.05   ~ "*",TRUE~ "ns"))
+  plot_data <- prop_data %>%group_by(Cancer,group) %>%summarise(mean_prop =mean(proportion,na.rm = TRUE),n = n(),se =ifelse(n() > 1,sd(proportion,na.rm = TRUE) / sqrt(n()),0),.groups = "drop")
+  cancer_levels <- c("BRC","ccRC","CRC","GBM","GC","HCC","HNSCC","NSCLC")
+  cancer_levels <- cancer_levels[cancer_levels %in%unique(as.character(plot_data$Cancer))]
+  plot_data$Cancer <- factor(plot_data$Cancer,levels = cancer_levels)
+  prop_data$Cancer <- factor(prop_data$Cancer,levels = cancer_levels)
+  stats_data$Cancer <- factor(stats_data$Cancer,levels = cancer_levels)
+  stats_sig <- stats_data %>%filter(!is.na(p_value),p_value < 0.05)
+  dodge_width <- 0.8
+  n_groups <- length(group_levels)
+  offsets <- seq(-dodge_width / 2 + dodge_width / (2 * n_groups),dodge_width / 2 - dodge_width / (2 * n_groups),length.out = n_groups)
+  names(offsets) <- group_levels
+  if (nrow(stats_sig) > 0) {
+    stats_sig <- stats_sig %>%mutate(cancer_num =match(as.character(Cancer),cancer_levels),xmin =cancer_num +offsets[as.character(group1)],xmax =cancer_num +offsets[as.character(group2)])
+    cancer_max <- plot_data %>%group_by(Cancer) %>%summarise(ymax =max(mean_prop + se,na.rm = TRUE),.groups = "drop")
+    overall_max <- max(plot_data$mean_prop +plot_data$se,na.rm = TRUE)
+    if (overall_max == 0) {overall_max <- 0.001}
+    stats_sig <- stats_sig %>%left_join(cancer_max,by = "Cancer") %>%group_by(Cancer) %>%arrange(comparison,.by_group = TRUE) %>%mutate(sig_order =row_number(),y.position =ymax +overall_max *0.08 *sig_order,tip =overall_max *0.015) %>%ungroup()
+  }
+  p <- ggplot(plot_data,aes(x = Cancer,y = mean_prop,fill = group)) +
+    geom_col(position =position_dodge(width = dodge_width),width = 0.7) +
+    geom_errorbar(aes(ymin =pmax(mean_prop - se,0),ymax =mean_prop + se),position =position_dodge(width = dodge_width),width = 0.6,linewidth = 0.65) +
+    scale_fill_manual(values = group_col_panel,drop = FALSE) +
+    labs(title = subtype,x = NULL,y = "Proportion",fill = NULL) +
+    theme_classic() +
+    theme(plot.title =element_text(hjust = 0.5,face = "bold",size = 11),axis.text.x =element_text(angle = 45,hjust = 1,vjust = 1,size = 8),axis.text.y =element_text(size = 8),axis.title.y =element_text(size = 9),legend.position ="bottom",legend.text =element_text(size = 8))
+  if (nrow(stats_sig) > 0) {
+    p <- p +
+      geom_segment(data = stats_sig,aes(x = xmin,xend = xmax,y = y.position,yend = y.position),inherit.aes = FALSE,linewidth = 0.3) +
+      geom_segment(data = stats_sig,aes(x = xmin,xend = xmin,y = y.position,yend = y.position - tip),inherit.aes = FALSE,linewidth = 0.3) +
+      geom_segment(data = stats_sig,aes(x = xmax,xend = xmax,y = y.position,yend = y.position - tip),inherit.aes = FALSE,linewidth = 0.3) +
+      geom_text(data = stats_sig,aes(x =(xmin + xmax) / 2,y =y.position,label =p_signif),inherit.aes = FALSE,vjust = -0.25,size = 3)
+  }
+  p <- p +scale_y_continuous(expand = expansion(mult = c(0,0.20)))+scale_y_sqrt()
+  return(list(roportion = prop_data,plot_data = plot_data,stats = stats_data,plot = p))
+}
+res_Macro_STMN1 <- analyse_one_subset(Mono,"Macro_STMN1")
+res_Macro_SLC40A1 <- analyse_one_subset(Mono,"Macro_SLC40A1")
+res_Macro_SPP1 <- analyse_one_subset(Mono,"Macro_SPP1")
+res_Macro_CCL4 <- analyse_one_subset(Mono,"Macro_CCL4")
+res_Macro_FCBBP <- analyse_one_subset(Mono,"Macro_FCGBP")
+res_cDC1_CLEC9A <- analyse_one_subset(DC,"cDC1_CLEC9A")
+res_cDC2_C1QC <- analyse_one_subset(DC,"cDC2_C1QC")
+res_cDC3_LAMP3 <- analyse_one_subset(DC,"cDC3_LAMP3")
+res_pDC_LILRA4 <- analyse_one_subset(DC,"pDC_LILRA4")
+final_plot <- (res_Macro_STMN1$plot +res_Macro_SLC40A1$plot) / (res_Macro_SPP1$plot +res_Macro_CCL4$plot) / (res_cDC1_CLEC9A$plot +res_cDC2_C1QC$plot) / (res_cDC3_LAMP3$plot +res_pDC_LILRA4$plot) +plot_layout(guides = "collect") &theme(legend.position = "bottom")
+final_plot
+all_stats <- bind_rows(
+  res_Macro_STMN1$stats,
+  res_Macro_SLC40A1$stats,
+  res_Macro_SPP1$stats,
+  res_Macro_CCL4$stats,
+  res_Macro_FCGBP$stats,
+  res_cDC1_CLEC9A$stats,
+  res_cDC2_C1QC$stats,
+  res_cDC3_LAMP3$stats,
+  res_pDC_LILRA4$stats,
+  .id = "result"
+)
+
+##FigureS2A
+gene_list = list(
+  c("CD14","FCGR3A"),
+  c("DLEU2","MPP7","PLCB1"),
+  c("CSMD1","LINGO1"),
+  c("CXCR4","JARI2","P2RX1"),
+  c("LGALS2"),
+  c("ISG15","IFI44L","IFITM1"),
+  c("PADI4","FOLR3"),
+  c("PPBP","PF4"),
+  c("C1QC","C1QB"),
+  c("TREM2"),
+  c("CCL20","EREG","AREG),
+  c("FCGBP","PADI2"),
+  c("SLC40A1","FOLR2"),
+  c("SPP1","MMP9"),
+  c("MRC1","MARCO"),
+  c("STMN1","MKI67"),
+  c("CCL4","CCL3"),
+  c("CXCL9","CXCL10")  
+)
+p = yy_Dotplot(seuratObj = Mono,
+               genes = gene_list,
+               group.by = "celltype")
+p +
+  theme(
+    panel.spacing = unit(x = 0.2, units = "lines"),
+    strip.background = element_blank(),
+    text = element_text(size = 0),
+    panel.grid = element_line(
+      colour = "grey",
+      linetype = "dashed",
+      size = 0.2
+    )
+  ) + theme(
+    axis.text.x = element_text(
+      size = 10,face = "italic"
+    ),
+    axis.text.y = element_text(size = 10),
+  ) + xlab("") + ylab("") +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
+    legend.position = 'bottom',
+    legend.key.size = unit(0.3, "inch"),
+    plot.margin = unit(c(0, 1, 0, 0), "char")
+  ) +
+  scale_radius(limits = c(0, 100))
+
+
+gene_list = list(
+  c("VCAN","S100A10"),
+  c("CCL4","CCL3"),
+  c("IL1B","PDE4B"),
+  c("NECTIN2","HIVEP1"),
+  c("MMP8","MMP9"),
+  c("TMCC1","RESF1"),
+  c("SLC16A3","NFKBIZ"),
+  c("CD74","HLA-DPA1","HLA-DRA"),
+  c("MKI67","STMN1"),
+  c("HSPA1A","HSPA1B"),
+  c("SCGB3A1","SCGB1A1"),
+  c("NAMPTP1","RHOB"),
+  c("SLC40A1","FOLR2"),
+  c("ISG15","IFI44L")
+)
+p = yy_Dotplot(seuratObj = Neu,
+               genes = gene_list,
+               group.by = "celltype")
+p +
+  theme(
+    panel.spacing = unit(x = 0.2, units = "lines"),
+    strip.background = element_blank(),
+    text = element_text(size = 0),
+    panel.grid = element_line(
+      colour = "grey",
+      linetype = "dashed",
+      size = 0.2
+    )
+  ) + theme(
+    axis.text.x = element_text(
+      size = 10,face = "italic"
+    ),
+    axis.text.y = element_text(size = 10),
+  ) + xlab("") + ylab("") +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
+    legend.position = 'bottom',
+    legend.key.size = unit(0.3, "inch"),
+    plot.margin = unit(c(0, 1, 0, 0), "char")
+  ) +
+  scale_radius(limits = c(0, 100))
+
+
+gene_list = list(
+  c("CLEC9A","BATF3"),
+  c("CD207","CD1A"),
+  c("C1QC","C1QA"),
+  c("CXCL9","CXCL10"),
+  c("ENHO","CFP"),
+  c("IL1R2","TIMP1"),
+  c("FCN1","S100A12"),
+  c("DLEU2","DPYD"),
+  c("CCL4","CCL3"),
+  c("LAMP3","FSCN1"),
+  c("LILRA4","IRF7")
+)
+p = yy_Dotplot(seuratObj = DC,
+               genes = gene_list,
+               group.by = "celltype")
+p +
+  theme(
+    panel.spacing = unit(x = 0.2, units = "lines"),
+    strip.background = element_blank(),
+    text = element_text(size = 0),
+    panel.grid = element_line(
+      colour = "grey",
+      linetype = "dashed",
+      size = 0.2
+    )
+  ) + theme(
+    axis.text.x = element_text(
+      size = 10,face = "italic"
+    ),
+    axis.text.y = element_text(size = 10),
+  ) + xlab("") + ylab("") +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
+    legend.position = 'bottom',
+    legend.key.size = unit(0.3, "inch"),
+    plot.margin = unit(c(0, 1, 0, 0), "char")
+  ) +
+  scale_radius(limits = c(0, 100))
+
+
+##Figure S2B
+x=as.data.frame(Mono@active.ident)
+df1 <- Mono@reductions$umap@cell.embeddings
+df1<- cbind(df1,as.data.frame(Mono@meta.data))
+get_density <-function(x,y,...){
+dens <- MASS::kde2d(x,y,...)
+ix <- findInterval(x,dens$x)
+iy <- findInterval(y,dens$y)
+ii <- cbind(ix,iy)
+return(dens$z[ii])
+}
+for(i in unique(df1$responsess)){
+id <- which(df1$responsess==i)
+gd <- get_density(df1$UMAP_1[id],df1$UMAP_2[id],n=100)
+df1[id,"Density"] <- gd/max(gd)
+}
+df1$responsess[df1$responsess %in% "Responder"] <- "Macrophage & Monocyte:\nResponder"
+df1$responsess[df1$responsess %in% "Non-Responder"] <- "\nNon-Responder"
+df1$responsess <- factor(
+df1$responsess,
+levels = c("Macrophage & Monocyte:\nResponder", "\nNon-Responder"),
+)
+colnames(df1)[1] <- "UMAP1"
+colnames(df1)[2] <- "UMAP2"
+mono <- ggplot(df1, aes(UMAP1, UMAP2, color = Density)) +
+    geom_point(size = 0.0000001, shape = ".", alpha = 0.7) +
+    facet_wrap(
+        ~responsess,
+        nrow = 2,
+        strip.position = "top",
+        scales = "fixed"
+    ) +
+    scale_color_viridis_c(
+        option = "C",
+        direction = 1,
+        breaks = seq(0, 1, 0.25),
+        name = "Density"
+    ) +
+    guides(
+        color = guide_colorbar(
+            barwidth = 15,
+            barheight = 1.2,
+            title.position = "left"
+        )
+    ) +
+    theme_bw(base_size = 15) +
+    theme(
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.4),
+        axis.line = element_blank(),
+        legend.position = "none",
+        legend.key.width = unit(4, "cm"),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        strip.text = element_text(angle = 0, size = 14, hjust = 0),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 12,colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5),
+        axis.title = element_text(size = 12,colour = "black"),
+        panel.spacing = unit(0.5, "cm")
+    )
+
+x=as.data.frame(DC@active.ident)
+df1 <- DC@reductions$umap@cell.embeddings
+df1<- cbind(df1,as.data.frame(DC@meta.data))
+get_density <-function(x,y,...){
+dens <- MASS::kde2d(x,y,...)
+ix <- findInterval(x,dens$x)
+iy <- findInterval(y,dens$y)
+ii <- cbind(ix,iy)
+return(dens$z[ii])
+}
+for(i in unique(df1$responsess)){
+id <- which(df1$responsess==i)
+gd <- get_density(df1$UMAP_1[id],df1$UMAP_2[id],n=100)
+df1[id,"Density"] <- gd/max(gd)
+}
+df1$responsess[df1$responsess %in% "Responder"] <- "DC:\nResponder"
+df1$responsess[df1$responsess %in% "Non-Responder"] <- "\nNon-Responder"
+df1$responsess <- factor(
+df1$responsess,
+levels = c("DC:\nResponder", "\nNon-Responder"),
+)
+colnames(df1)[1] <- "UMAP1"
+colnames(df1)[2] <- "UMAP2"
+dc <- ggplot(df1, aes(UMAP1, UMAP2, color = Density)) +
+    geom_point(size = 0.0000001, shape = ".", alpha = 0.7) +
+    facet_wrap(
+        ~responsess,
+        nrow = 2,
+        strip.position = "top",
+        scales = "fixed"
+    ) +
+    scale_color_viridis_c(
+        option = "C",
+        direction = 1,
+        breaks = seq(0, 1, 0.25),
+        name = "Density"
+    ) +
+    guides(
+        color = guide_colorbar(
+            barwidth = 15,
+            barheight = 1.2,
+            title.position = "left"
+        )
+    ) +
+    theme_bw(base_size = 15) +
+    theme(
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.4),
+        axis.line = element_blank(),
+        legend.position = "none",
+        legend.key.width = unit(4, "cm"),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        strip.text = element_text(angle = 0, size = 14, hjust = 0),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 12,colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5),
+        axis.title = element_text(size = 12,colour = "black"),
+        panel.spacing = unit(0.5, "cm")
+    )
+
+x=as.data.frame(Neu@active.ident)
+df1 <- Neu@reductions$umap@cell.embeddings
+df1<- cbind(df1,as.data.frame(Neu@meta.data))
+get_density <-function(x,y,...){
+dens <- MASS::kde2d(x,y,...)
+ix <- findInterval(x,dens$x)
+iy <- findInterval(y,dens$y)
+ii <- cbind(ix,iy)
+return(dens$z[ii])
+}
+for(i in unique(df1$responsess)){
+id <- which(df1$responsess==i)
+gd <- get_density(df1$UMAP_1[id],df1$UMAP_2[id],n=100)
+df1[id,"Density"] <- gd/max(gd)
+}
+df1$responsess[df1$responsess %in% "Responder"] <- "Neu:\nResponder"
+df1$responsess[df1$responsess %in% "Non-Responder"] <- "\nNon-Responder"
+df1$responsess <- factor(
+df1$responsess,
+levels = c("Neu:\nResponder", "\nNon-Responder"),
+)
+colnames(df1)[1] <- "UMAP1"
+colnames(df1)[2] <- "UMAP2"
+neu <- ggplot(df1, aes(UMAP1, UMAP2, color = Density)) +
+    geom_point(size = 0.0000001, shape = ".", alpha = 0.7) +
+    facet_wrap(
+        ~responsess,
+        nrow = 2,
+        strip.position = "top",
+        scales = "fixed"
+    ) +
+    scale_color_viridis_c(
+        option = "C",
+        direction = 1,
+        breaks = seq(0, 1, 0.25),
+        name = "Density"
+    ) +
+    guides(
+        color = guide_colorbar(
+            barwidth = 15,
+            barheight = 1.2,
+            title.position = "left"
+        )
+    ) +
+    theme_bw(base_size = 15) +
+    theme(
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.4),
+        axis.line = element_blank(),
+        legend.position = "none",
+        legend.key.width = unit(4, "cm"),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        strip.text = element_text(angle = 0, size = 14, hjust = 0),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 12,colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5),
+        axis.title = element_text(size = 12,colour = "black"),
+        panel.spacing = unit(0.5, "cm")
+    )
+(mono+neu+dc)+plot_layoyt(nrow=1)
+
+
+##Figure3A
+Mono <- readRDS("Mono.rds")
+Idents(Mono) <- Mono$site
+Mono <- subset(Mono,idents="tumor")
+Idents(Mono) <- Mono$cell.type
+SLC40A1 <- subset(Mono,idents="Macro_SLC40A1")
+SLC40A1$diff <- paste0(SLC40A1$Cancer,"-",SLC40A1$group)
+Idents(SLC40A1) <- SLC40A1$diff
+diff <- FindMarkers(SLC40A1,ident.1 = c("BRC-tumor.NR.post","NSCLC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"),min.pct = 0.3,logfc.threshold = 0.4)
+diff$names <- rownames(diff)
+diff.R <- subset(diff,diff$avg_log2FC>0)
+diff.NR <- subset(diff,diff$avg_log2FC<0)
+gene.R <- bitr(diff.R$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+gene.NR <- bitr(diff.NR$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+GO.R<-enrichGO( gene.R$ENTREZID,OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+GO.NR<-enrichGO( gene.NR$ENTREZID, OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+BP_top10.UP.R <-GO.R%>% filter(ONTOLOGY=="BP")%>%arrange(p.adjust)%>%head(10)
+BP_top10.DOWN.NR <-GO.NR%>% filter(ONTOLOGY=="BP")%>%arrange(p.adjust)%>%head(10)
+BP_top10.UP.R$group <- "BRC+NSCLC"
+BP_top10.DOWN.NR$group <- "CRC"
+GO <- rbind(BP_top10.DOWN.NR,BP_top10.UP.R)
+GO$Count <- as.numeric(GO$Count)
+GO.sorted_descriptions <- GO %>%arrange(group, p.adjust) %>%distinct(Description) %>%pull(Description)
+GO$Description <- factor(GO$Description, levels = GO.sorted_descriptions)
+GO$Description <- as.character(GO$Description)
+GO$Description <- as.factor(GO$Description)
+GO$Description <- fct_inorder(GO$Description)
+cluster <- GO$Description %>% as.data.frame() %>%
+  mutate(group=rep(c("CRC","BRC+NSCLC"),times=c(10,10))) %>%
+  mutate(p="")%>%
+  ggplot(aes(p,.,fill=group))+
+  geom_tile() + 
+  scale_y_discrete(position="right") +
+  theme_minimal()+xlab(NULL) + ylab(NULL) +
+  theme(axis.text.y = element_blank(),
+        axis.text.x =element_text(
+          angle =90,hjust =0.5,vjust = 0.5))+
+  labs(fill = "group")+
+  scale_fill_manual(
+    values = c("red", "blue")
+  )+NoLegend()
+ggplot(GO, aes(x = Count, y = Description, fill = group)) + 
+  geom_bar(stat = "identity", width = 0.7) + 
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5,colour = "black",face="bold",size = 10),
+    axis.text.y = element_text(size = 14, colour = "#222222"),
+    legend.title = element_text(size = 10)
+  ) +
+  scale_fill_manual(values = c("BRC+NSCLC" = "red", "CRC" = "blue")) + 
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_legend(order = 3)) +
+  scale_y_discrete(position = "right") + 
+  theme(title = element_text(size = 13))+labs(title = "Macro_SLC40A1:tumor.NR.post")+NoLegend()
+
+
+##Figure3B & C
+Idents(SLC40A1) <- SLC40A1$group
+SLC40A1 <- subset(SLC40A1,idents=c("tumor.R.post","tumor.NR.post"))
+Hypoxic <- read.table("Hypoxia")
+Hypoxic <- as.character(Hypoxic$V1)
+chemokine <- read.table("chemokine")
+chemokine <- as.character(chemokine$V1)
+cells_rankings <- AUCell_buildRankings(SLC40A1@assays$RNA@data,plotStats = FALSE)
+cells_AUC.Hypoxic <- AUCell_calcAUC(Hypoxic, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.Hypoxic <- as.numeric(getAUC(cells_AUC.Hypoxic))
+SLC40A1$Hypoxic <- cells_AUC.Hypoxic
+meta <- SLC40A1@meta.data
+meta <- meta[,c("Cancer","Hypoxic","group")]
+meta$Cancer <- factor(meta$Cancer,levels = c("NSCLC","BRC","CRC"))
+ggplot(meta, aes(x = Cancer, y = Hypoxic, fill = group)) +
+  geom_violin(width = 0.8, size = 0.8, scale = "width", 
+              position = position_dodge(width = 0.8),
+              fill = "white",               
+              aes(color = group)) +          
+  geom_boxplot(width = 0.3, size = 0.5, 
+               position = position_dodge(width = 0.8),
+               outlier.size = 1,
+               color = "black") +       
+  theme_classic() +
+  scale_fill_manual(values = group_col_panel) +  
+  scale_color_manual(values = group_col_panel) + 
+  geom_hline(aes(yintercept = median(Hypoxic)), linetype = "dashed")+
+  theme(axis.text.x = element_text(size = 13,angle = 45,hjust = 1,vjust = 1,colour = "black"),axis.title.x = element_blank(),axis.text.y = element_text(size = 12,colour = "black"),axis.title.y = element_text(size = 14,colour = "black"))
+cells_AUC.chemokine <- AUCell_calcAUC(chemokine, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.chemokine <- as.numeric(getAUC(cells_AUC.chemokine))
+SLC40A1$chemokine <- cells_AUC.chemokine
+meta <- SLC40A1@meta.data
+meta <- meta[,c("Cancer","chemokine","group")]
+meta$Cancer <- factor(meta$Cancer,levels = c("BRC","NSCLC","CRC"))
+ggplot(meta, aes(x = Cancer, y = chemokine, fill = group)) +
+  geom_violin(width = 0.8, size = 0.8, scale = "width", 
+              position = position_dodge(width = 0.8),
+              fill = "white",               
+              aes(color = group)) +          
+  geom_boxplot(width = 0.3, size = 0.5, 
+               position = position_dodge(width = 0.8),
+               outlier.size = 1,outlier.shape  = NA,
+               color = "black") +       
+  theme_classic() +
+  scale_fill_manual(values = group_col_panel) +  
+  scale_color_manual(values = group_col_panel) + 
+  geom_hline(aes(yintercept = median(chemokine)), linetype = "dashed")+
+  theme(axis.text.x = element_text(size = 13,angle = 45,hjust = 1,vjust = 1,colour = "black"),axis.title.x = element_blank(),axis.text.y = element_text(size = 12,colour = "black"),axis.title.y = element_text(size = 14,colour = "black"))
+SLC40A1 <- subset(Mono,idents="Macro_SLC40A1")
+SLC40A1$diff <- paste0(SLC40A1$Cancer,"-",SLC40A1$group)
+Idents(SLC40A1) <- SLC40A1$site
+SLC40A1 <- subset(SLC40A1,idents="tumor")
+Idents(SLC40A1) <- SLC40A1$diff
+SLC40A1$diff <- factor(SLC40A1$diff,levels = c("CRC-tumor.R.post","CRC-tumor.NR.post","NSCLC-tumor.R.post","NSCLC-tumor.NR.post","BRC-tumor.R.post","BRC-tumor.NR.post"))
+Idents(SLC40A1) <- SLC40A1$diff
+DotPlot(SLC40A1, features = c("HIF1A","CCL18","CXCL2,"CXCL8","CCL3L1"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 13,face = "italic"),axis.text.x = element_text(size = 12,angle = 45,hjust = 1,vjust = 1),strip.background =element_rect(colour = "white")) +labs(title = "cDC1_CLEC9A")+coord_flip()
+
+
+##Figure3C
+Mono <- readRDS("Mono.rds")
+CD45 <- readRDS("CD45.rds")
+Idents(Mono) <- Mono$site
+Mono <- subset(Mono,idents="tumor")
+Idents(Mono) <- Mono$cell.type
+SLC40A1 <- subset(Mono,idents="Macro_SLC40A1")
+CD45 <- merge(CD45,y=c(SLC40A1))
+Idents(CD45) <- CD45$group
+CD45 <- subset(CD45,idents=c("tumor.R.post","tumor.NR.post"))
+CD45$diff <- paste0(CD45$cell.type,"-",CD45$group)
+CD45@active.ident <- as.factor(CD45$diff)
+ligand_target_matrix = readRDS("nichenet/ligand_target_matrix_nsga2r_final.rds")
+lr_network = readRDS("nichenet/lr_network_human_21122021.rds")
+weighted_networks = readRDS("nichenet/weighted_networks_nsga2r_final.rds")
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+SLC40A1$diff <- paste0(SLC40A1$Cancer,"-",SLC40A1$group)
+Idents(SLC40A1) <- SLC40A1$diff
+marker <- FindMarkers(SLC40A1,ident.1 = c("NSCLC-tumor.NR.post","BRC-tumor.NR.post"),ident.2 = c("CRC-tumor.NR.post"))
+DE_table_receiver <- subset(marker,avg_log2FC>0) %>% rownames_to_column("gene")
+geneset_oi = DE_table_receiver %>% pull(gene)
+geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
+CD45@active.ident <- as.factor(CD45$group)
+expressed_genes_receiver = get_expressed_genes('tumor.NR.post', CD45, pct = 0.3,assay_oi = 'RNA')
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+expressed_ligands = ligands
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset_oi, background_expressed_genes = background_expressed_genes,ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(dplyr::desc(pearson)))
+ligand_activities
+best_upstream_ligands = ligand_activities %>% top_n(5, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = 250) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.1)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names()
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "#B2182B",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")+ theme(axis.text.x = element_text(face = "italic"),axis.text=element_text(color='black')) +scale_fill_gradient2(low = "whitesmoke",  high = "#B2182B")
+p_ligand_target_network
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% 
+  as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+dist_receptors = stats::dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>%make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", legend_position = "right",x_axis_position = "top",legend_title = "Prior interaction potential")
+p_ligand_receptor_network
+ligand_pearson_matrix = ligand_activities %>% dplyr::select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity",color = "darkorange",legend_position = "right",x_axis_position = "top", legend_title = "Pearson correlation coefficient") +theme(legend.text = element_text(size = 9))
+p_ligand_pearson
+
+
+##Figure 3G
+SPP1 <- subset(Mono,idents="Macro_SPP1")
+SPP1$diff <- paste0(SPP1$Cancer,"-",SPP1$group)
+Idents(SPP1) <- SPP1$diff
+diff <- FindMarkers(SPP1,ident.1 = c("NSCLC-tumor.NR.post"),ident.2 = c("HNSCC-tumor.NR.post"),min.pct = 0.1,logfc.threshold = 0.2)
+diff$names <- rownames(diff)
+diff.R <- subset(diff,diff$avg_log2FC>0)
+diff.NR <- subset(diff,diff$avg_log2FC<0)
+gene.R <- bitr(diff.R$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+gene.NR <- bitr(diff.NR$names,fromType = 'SYMBOL',toType = 'ENTREZID',OrgDb = GO_database)
+GO.R<-enrichGO( gene.R$ENTREZID,OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+GO.NR<-enrichGO( gene.NR$ENTREZID, OrgDb = GO_database,keyType = "ENTREZID",ont = "ALL",pvalueCutoff = 0.05,qvalueCutoff = 0.05,readable = TRUE)
+BP_top10.UP.R <-GO.R%>% filter(ONTOLOGY=="BP")%>%arrange(p.adjust)%>%head(10)
+BP_top10.DOWN.NR <-GO.NR%>% filter(ONTOLOGY=="BP")%>%arrange(p.adjust)%>%head(10)
+BP_top10.UP.R$group <- "NSCLC"
+BP_top10.DOWN.NR$group <- "HNSCC"
+GO <- rbind(BP_top10.DOWN.NR,BP_top10.UP.R)
+GO$Count <- as.numeric(GO$Count)
+GO.sorted_descriptions <- GO %>%arrange(group, p.adjust) %>%distinct(Description) %>%pull(Description)
+GO$Description <- factor(GO$Description, levels = GO.sorted_descriptions)
+GO$Description <- as.character(GO$Description)
+GO$Description <- as.factor(GO$Description)
+GO$Description <- fct_inorder(GO$Description)
+ggplot(GO, aes(x = Count, y = Description, fill = group)) + 
+  geom_bar(stat = "identity", width = 0.7) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5,colour = "black",face="bold",size = 10),
+    axis.text.y = element_text(size = 14, colour = "#222222"),
+    legend.title = element_text(size = 10)
+  ) +
+  scale_fill_manual(values = c("NSCLC" = "red", "HNSCC" = "blue")) + 
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_legend(order = 3)) +
+  scale_y_discrete(position = "right") + 
+  theme(title = element_text(size = 13))+labs(title = "Macro_SPP1:tumor.NR.post")
+
+
+##Figure 3H & I
+Idents(Mono) <- Mono$cell.type
+SPP1 <- subset(Mono,idents="Macro_SPP1")
+Idents(SPP1) <- SPP1$group
+SPP1 <- subset(SPP1,idents="tumor.NR.post")
+Angiogenesis <- read.table("Angiogenesis")
+Angiogenesis <- as.character(Angiogenesis$V1)
+Anti.inflammatory <- read.table("anti-inflammatory")
+Anti.inflammatory <- as.character(Anti.inflammatory$V1)
+
+
+cells_rankings <- AUCell_buildRankings(SPP1@assays$RNA@data,plotStats = FALSE)
+cells_AUC.anti <- AUCell_calcAUC(Anti.inflammatory, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.anti <- as.numeric(getAUC(cells_AUC.anti))
+SPP1$Anti.inflammatory <- cells_AUC.anti
+
+cells_AUC.Angiogenesis <- AUCell_calcAUC(Angiogenesis, cells_rankings,aucMaxRank=nrow(cells_rankings)*0.1)
+cells_AUC.Angiogenesis <- as.numeric(getAUC(cells_AUC.Angiogenesis))
+SPP1$Angiogenesis <- cells_AUC.Angiogenesis
+SPP1$diff <- paste0(SPP1$Cancer,"-",SPP1$group)
+meta <- SPP1@meta.data
+meta <- meta[,c("Cancer","Anti.inflammatory","Angiogenesis")]
+meta$Cancer <- factor(meta$Cancer,levels = c("NSCLC","HNSCC"))
+meta.Anti.inflammatory <- meta %>%mutate(Anti.inflammatory = scale(Anti.inflammatory))
+meta.Anti.inflammatory <- meta.Anti.inflammatory %>%group_by(Cancer) %>%summarise(Anti-inflammatory_mean = mean(Anti.inflammatory, na.rm = TRUE)) %>%ungroup()
+meta.Angiogenesis <- meta %>%mutate(Angiogenesis = scale(Angiogenesis))
+meta.Angiogenesis <- meta.Angiogenesis %>%group_by(Cancer) %>%summarise(Hypoxic_mean = mean(Angiogenesis, na.rm = TRUE)) %>%ungroup()
+meta <- cbind(meta.Anti.inflammatory,meta.Hypoxic)
+meta <- meta[,-3]
+meta1 <- melt(meta,id.vars = "Cancer",measure.vars = c("Anti-inflammatory_mean","Hypoxic_mean"))
+meta1$variable <- gsub("_mean","",meta1$variable)
+meta1$diff <- paste0(meta1$Cancer,"-",meta1$group)
+ggplot(meta1, aes(x = diff, y = variable, fill = value)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  scale_fill_gradientn(
+    colours = colors,
+    name = "Score (Z-score)",
+    limits = c(-1, 1)
+  ) +
+  labs(title = "Anti-inflammatory & Angiogenesis score in Macro_SPP1") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 12,colour = "black"),
+        axis.text.y = element_text(size = 12,colour = "black"),
+        axis.title = element_blank(),
+        legend.text = element_text(size = 11),
+        legend.title = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+
+Idents(SPP1) <- SPP1$diff
+SPP1$diff <- factor(SPP1$diff,levels=c("NSCLC-tumor.NR.post","NSCLC-tumor.R.post""HNSCC-tumor.NR.post","HNSCC-tumor.R.post"))
+DotPlot(SPP1, features = c("HAVCR2","LGALS9","VEGFB","CXCR4"))+ scale_colour_gradientn(colours  = brewer.pal(9, "RdBu")[9:1],na.value="transparent")+theme(axis.title=element_blank(),axis.text.y =element_text(size = 12),axis.text.x = element_text(size = 12,angle = 90,vjust = 0.5,face = "italic"),strip.background =element_rect(colour = "white")) +labs(title = "LAG3 & IL10")
+
+##Figure3J
+SPP1 <- subset(Mono,idents="Macro_SPP1")
+CD45 <- merge(CD45,y=c(SPP1))
+Idents(CD45) <- CD45$group
+CD45 <- subset(CD45,idents=c("tumor.R.post","tumor.NR.post"))
+CD45$diff <- paste0(CD45$cell.type,"-",CD45$group)
+CD45@active.ident <- as.factor(CD45$diff)
+ligand_target_matrix = readRDS("nichenet/ligand_target_matrix_nsga2r_final.rds")
+lr_network = readRDS("nichenet/lr_network_human_21122021.rds")
+weighted_networks = readRDS("nichenet/weighted_networks_nsga2r_final.rds")
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+SPP1$diff <- paste0(SPP1$Cancer,"-",SPP1$group)
+Idents(SPP1) <- SPP1$diff
+marker <- FindMarkers(SPP1,ident.1 = c("NSCLC-tumor.NR.post"),ident.2 = c("HNSCC-tumor.NR.post"))
+DE_table_receiver <- subset(marker,avg_log2FC>0) %>% rownames_to_column("gene")
+geneset_oi = DE_table_receiver %>% pull(gene)
+geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
+CD45@active.ident <- as.factor(CD45$group)
+expressed_genes_receiver = get_expressed_genes('tumor.NR.post', CD45, pct = 0.3,assay_oi = 'RNA')
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+expressed_ligands = ligands
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset_oi, background_expressed_genes = background_expressed_genes,ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(dplyr::desc(pearson)))
+ligand_activities
+best_upstream_ligands = ligand_activities %>% top_n(5, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = 250) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.1)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names()
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "#B2182B",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")+ theme(axis.text.x = element_text(face = "italic"),axis.text=element_text(color='black')) +scale_fill_gradient2(low = "whitesmoke",  high = "#B2182B")
+p_ligand_target_network
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% 
+  as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+dist_receptors = stats::dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>%make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", legend_position = "right",x_axis_position = "top",legend_title = "Prior interaction potential")
+p_ligand_receptor_network
+ligand_pearson_matrix = ligand_activities %>% dplyr::select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity",color = "darkorange",legend_position = "right",x_axis_position = "top", legend_title = "Pearson correlation coefficient") +theme(legend.text = element_text(size = 9))
+p_ligand_pearson
+
+
+##FigureS3
